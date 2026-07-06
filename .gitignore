@@ -1,0 +1,48 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+dist-electron/
+*.tsbuildinfo
+
+# Environment & secrets
+.env
+.env.*
+.env.local
+.env.*.local
+
+# Test artifacts
+.tmp-tests/
+coverage/
+
+# IDE & editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+*.sublime-project
+*.sublime-workspace
+
+# OS generated
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Cache
+.cache/
+.eslintcache
+
+# Agents & tools
+.agents/
+
+# Project-specific
+REQUIREMENTS.md

@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>iframe - UI Explorer</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main data-testid="iframe-page">
+      <h1>iframe</h1>
+      <p class="muted">The child document contains controls that must keep frame path context.</p>
+      <section>
+        <h2>Host document</h2>
+        <button type="button" data-testid="host-action">Host action</button>
+      </section>
+      <iframe
+        title="Payment frame"
+        src="./iframe-child.html"
+        style="width: 100%; min-height: 320px; border: 1px solid #9daaa0; border-radius: 8px"
+      ></iframe>
+    </main>
+  </body>
+</html>

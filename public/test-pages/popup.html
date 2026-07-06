@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Popup - UI Explorer</title>
+    <link rel="stylesheet" href="./styles.css" />
+    <style>
+      .menu,
+      .popover,
+      .tooltip {
+        display: none;
+        width: max-content;
+        padding: 10px;
+        border: 1px solid #9daaa0;
+        border-radius: 8px;
+        background: white;
+        box-shadow: 0 12px 24px rgb(0 0 0 / 0.12);
+      }
+
+      .menu[data-open="true"],
+      .popover[data-open="true"],
+      .tooltip-anchor:hover + .tooltip {
+        display: grid;
+        gap: 8px;
+      }
+    </style>
+  </head>
+  <body>
+    <main data-testid="popup-page">
+      <h1>Popup</h1>
+      <p class="muted">Short-lived UI samples for delayed capture and hover capture.</p>
+      <section>
+        <div class="row">
+          <button type="button" id="menu-button" aria-haspopup="menu">Open menu</button>
+          <button type="button" id="popover-button">Open popover</button>
+          <button type="button" class="tooltip-anchor" aria-describedby="tip">Hover tooltip</button>
+          <div id="tip" role="tooltip" class="tooltip">Tooltip content</div>
+        </div>
+        <div id="menu" class="menu" role="menu">
+          <button type="button" role="menuitem">Rename</button>
+          <button type="button" role="menuitem">Duplicate</button>
+          <button type="button" role="menuitem">Archive</button>
+        </div>
+        <div id="popover" class="popover" role="dialog" aria-label="Delayed capture popover">
+          <p>Popover content</p>
+          <input placeholder="Transient input" />
+        </div>
+      </section>
+    </main>
+    <script>
+      document.querySelector("#menu-button").addEventListener("click", () => {
+        document.querySelector("#menu").dataset.open = document.querySelector("#menu").dataset.open === "true" ? "false" : "true";
+      });
+      document.querySelector("#popover-button").addEventListener("click", () => {
+        document.querySelector("#popover").dataset.open =
+          document.querySelector("#popover").dataset.open === "true" ? "false" : "true";
+      });
+    </script>
+  </body>
+</html>

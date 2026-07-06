@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Shadow DOM - UI Explorer</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main data-testid="shadow-page">
+      <h1>Shadow DOM</h1>
+      <p class="muted">Open roots can be traversed; closed roots should be reported as limited.</p>
+      <section>
+        <h2>Open component</h2>
+        <open-widget data-testid="open-widget"></open-widget>
+      </section>
+      <section>
+        <h2>Nested open component</h2>
+        <nested-widget></nested-widget>
+      </section>
+      <section>
+        <h2>Closed component</h2>
+        <closed-widget></closed-widget>
+      </section>
+    </main>
+
+    <script>
+      customElements.define(
+        "open-widget",
+        class extends HTMLElement {
+          connectedCallback() {
+            const root = this.attachShadow({ mode: "open" });
+            root.innerHTML = `
+              <style>
+                button { min-height: 36px; border: 1px solid #147876; border-radius: 6px; padding: 0 12px; background: #147876; color: white; }
+                label { display: grid; gap: 6px; }
+              </style>
+              <label>
+                Shadow query
+                <input data-testid="shadow-query" aria-label="Shadow query" placeholder="inside open root" />
+              </label>
+              <button type="button" part="action">Shadow action</button>
+            `;
+          }
+        }
+      );
+
+      customElements.define(
+        "nested-widget",
+        class extends HTMLElement {
+          connectedCallback() {
+            const root = this.attachShadow({ mode: "open" });
+            root.innerHTML = `<open-widget data-testid="nested-open-widget"></open-widget>`;
+          }
+        }
+      );
+
+      customElements.define(
+        "closed-widget",
+        class extends HTMLElement {
+          connectedCallback() {
+            const root = this.attachShadow({ mode: "closed" });
+            root.innerHTML = `<button type="button">Closed action</button>`;
+          }
+        }
+      );
+    </script>
+  </body>
+</html>

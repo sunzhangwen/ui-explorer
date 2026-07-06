@@ -1,0 +1,9 @@
+{
+  "extends": "./tsconfig.electron.json",
+  "compilerOptions": {
+    "outDir": ".tmp-tests",
+    "noEmit": false
+  },
+  "include": ["src/shared/**/*.ts"],
+  "exclude": []
+}

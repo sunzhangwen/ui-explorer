@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Table - UI Explorer</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main data-testid="table-page">
+      <h1>Table</h1>
+      <p class="muted">A table fixture with grouped headers and merged cells.</p>
+      <section>
+        <table aria-label="Quarterly automation metrics">
+          <thead>
+            <tr>
+              <th rowspan="2">Team</th>
+              <th colspan="2">Q1</th>
+              <th colspan="2">Q2</th>
+            </tr>
+            <tr>
+              <th>Selectors</th>
+              <th>Pass rate</th>
+              <th>Selectors</th>
+              <th>Pass rate</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <th>Payments</th>
+              <td>148</td>
+              <td>97%</td>
+              <td>164</td>
+              <td>98%</td>
+            </tr>
+            <tr>
+              <th>Identity</th>
+              <td colspan="2">Migration</td>
+              <td>91</td>
+              <td>95%</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+    </main>
+  </body>
+</html>

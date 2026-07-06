@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Dynamic list - UI Explorer</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main data-testid="dynamic-list-page">
+      <h1>Dynamic list</h1>
+      <p class="muted">Items reorder and regenerate ids to expose brittle selectors.</p>
+      <section>
+        <div class="row">
+          <button type="button" id="shuffle">Shuffle</button>
+          <button type="button" id="reroll">Regenerate ids</button>
+        </div>
+        <div id="items" class="card-grid"></div>
+      </section>
+    </main>
+    <script>
+      let items = ["Alpha", "Bravo", "Charlie", "Delta"];
+
+      function render() {
+        const host = document.querySelector("#items");
+        host.innerHTML = "";
+        items.forEach((name, index) => {
+          const article = document.createElement("article");
+          article.className = `sample-card row_${Math.random().toString(16).slice(2, 8)}`;
+          article.id = `row-${Date.now()}-${index}`;
+          article.innerHTML = `
+            <h2>${name}</h2>
+            <p class="muted">Position ${index + 1}</p>
+            <button type="button" data-testid="dynamic-action-${name.toLowerCase()}">Inspect ${name}</button>
+          `;
+          host.append(article);
+        });
+      }
+
+      document.querySelector("#shuffle").addEventListener("click", () => {
+        items = items.sort(() => Math.random() - 0.5);
+        render();
+      });
+      document.querySelector("#reroll").addEventListener("click", render);
+      render();
+    </script>
+  </body>
+</html>

@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Basic DOM - UI Explorer</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main data-testid="basic-dom-page">
+      <h1>Basic DOM</h1>
+      <p class="muted">Common controls for selector generation and attribute inspection.</p>
+
+      <section aria-labelledby="account-title">
+        <h2 id="account-title">Account form</h2>
+        <label>
+          Email
+          <input data-testid="email-input" name="email" placeholder="name@example.com" autocomplete="email" />
+        </label>
+        <label>
+          Role
+          <select name="role" aria-label="Role selector">
+            <option>Admin</option>
+            <option>Operator</option>
+          </select>
+        </label>
+        <div class="row">
+          <button type="button" data-testid="save-account">Save account</button>
+          <button type="button" class="btn_3f91a random-48291">Dynamic class button</button>
+          <a href="https://example.com" role="button" aria-label="Open documentation">Docs</a>
+        </div>
+      </section>
+
+      <section>
+        <h2>Repeated text</h2>
+        <div class="card-grid">
+          <article class="sample-card"><button type="button">Edit</button><p>Profile row</p></article>
+          <article class="sample-card"><button type="button">Edit</button><p>Billing row</p></article>
+          <article class="sample-card"><button type="button">Edit</button><p>Security row</p></article>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>
