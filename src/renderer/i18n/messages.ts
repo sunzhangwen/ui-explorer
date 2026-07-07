@@ -44,6 +44,8 @@ export type MessageKey =
   | "preview.title"
   | "preview.openPage"
   | "preview.monaco"
+  | "preview.currentTarget"
+  | "preview.selectedSnapshot"
   | "selector.candidates"
   | "selector.matchCount"
   | "selector.totalScore"
@@ -130,6 +132,8 @@ export const messages: Record<"zh-CN" | "en-US", Record<MessageKey, string>> = {
     "preview.title": "验收样例",
     "preview.openPage": "打开页面",
     "preview.monaco": "导出预览占位",
+    "preview.currentTarget": "当前页面",
+    "preview.selectedSnapshot": "选中元素快照",
     "selector.candidates": "Selector 候选",
     "selector.matchCount": "匹配数",
     "selector.totalScore": "综合分",
@@ -215,6 +219,8 @@ export const messages: Record<"zh-CN" | "en-US", Record<MessageKey, string>> = {
     "preview.title": "Acceptance samples",
     "preview.openPage": "Open page",
     "preview.monaco": "Export preview placeholder",
+    "preview.currentTarget": "Current page",
+    "preview.selectedSnapshot": "Selected element snapshot",
     "selector.candidates": "Selector candidates",
     "selector.matchCount": "Matches",
     "selector.totalScore": "Score",

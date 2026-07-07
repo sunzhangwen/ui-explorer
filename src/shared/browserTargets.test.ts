@@ -15,6 +15,20 @@ test("toBrowserTargets keeps inspectable page and iframe targets", () => {
   );
 });
 
+test("toBrowserTargets accepts wrapped target lists from diagnostic clients", () => {
+  const targets = toBrowserTargets({
+    value: [
+      { id: "page-1", type: "page", title: "Bing", url: "https://www.bing.com/", webSocketDebuggerUrl: "ws://page" },
+      { id: "browser-ui", type: "browser_ui", title: "Toolbar", url: "chrome://toolbar", webSocketDebuggerUrl: "ws://ui" }
+    ]
+  });
+
+  assert.deepEqual(
+    targets.map((target) => target.id),
+    ["page-1"]
+  );
+});
+
 test("getDefaultBrowserTargetId prefers page targets", () => {
   assert.equal(
     getDefaultBrowserTargetId([

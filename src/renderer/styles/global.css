@@ -104,7 +104,8 @@ select {
 .selector-layer label,
 .selector-attributes label,
 .selector-risk,
-.editor-tabs {
+.editor-tabs,
+.collapsible-header {
   display: flex;
   align-items: center;
 }
@@ -221,6 +222,11 @@ select {
   flex-direction: column;
   gap: 12px;
   padding: 12px;
+}
+
+.right-panel {
+  gap: 8px;
+  overflow: auto;
 }
 
 .center-panel {
@@ -444,6 +450,64 @@ select {
   background: white;
 }
 
+.target-kind {
+  flex: 0 0 auto;
+  padding: 5px 8px;
+  border: 1px solid rgb(var(--color-border));
+  border-radius: var(--radius-ui);
+  color: rgb(var(--color-muted));
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+}
+
+.target-overview {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  gap: 12px;
+  min-height: 0;
+  padding: 12px;
+  overflow: auto;
+}
+
+.target-hero,
+.target-selection {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid rgb(var(--color-border));
+  border-radius: var(--radius-ui);
+  background: rgb(var(--color-panel) / 0.52);
+}
+
+.target-hero span,
+.target-selection h3 {
+  margin: 0;
+  color: rgb(var(--color-muted));
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.target-hero h3 {
+  margin: 0;
+  font-size: 20px;
+  line-height: 1.25;
+}
+
+.target-hero p {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: rgb(var(--color-muted));
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+}
+
+.target-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+
 .status-pill {
   gap: 5px;
   min-height: 24px;
@@ -519,6 +583,51 @@ select {
 .property-row strong {
   overflow-wrap: anywhere;
   text-align: right;
+}
+
+.collapsible-section {
+  border: 1px solid rgb(var(--color-border));
+  border-radius: var(--radius-ui);
+  background: rgb(var(--color-elevated) / 0.72);
+  overflow: hidden;
+}
+
+.collapsible-header {
+  width: 100%;
+  gap: 7px;
+  min-height: 34px;
+  padding: 0 9px;
+  border: 0;
+  background: transparent;
+  color: rgb(var(--color-muted));
+  text-align: left;
+}
+
+.collapsible-header span {
+  flex: 0 0 auto;
+  color: rgb(var(--color-text));
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.collapsible-header small {
+  min-width: 0;
+  overflow: hidden;
+  color: rgb(var(--color-muted));
+  font-size: var(--font-size-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.collapsible-header:hover {
+  background: rgb(var(--color-accent) / 0.08);
+}
+
+.collapsible-body {
+  display: grid;
+  gap: var(--space-2);
+  padding: 0 9px 9px;
 }
 
 .selector-stack {

@@ -1,5 +1,19 @@
-import { contextBridge, ipcRenderer } from "electron";
-import { IPC_CHANNELS, type IpcApi } from "../shared/ipc.js";
+import type { IpcApi } from "../shared/ipc.js";
+
+const { contextBridge, ipcRenderer } = require("electron") as typeof import("electron");
+
+const IPC_CHANNELS = {
+  ping: "app:ping",
+  getAppInfo: "app:get-info",
+  listTestPages: "test-pages:list",
+  connectBrowser: "browser:connect",
+  disconnectBrowser: "browser:disconnect",
+  listBrowserTargets: "browser:list-targets",
+  selectBrowserTarget: "browser:select-target",
+  getDomSnapshot: "browser:get-dom-snapshot",
+  highlightElement: "browser:highlight-element",
+  highlightElements: "browser:highlight-elements"
+} as const;
 
 const api: IpcApi = {
   ping: () => ipcRenderer.invoke(IPC_CHANNELS.ping),

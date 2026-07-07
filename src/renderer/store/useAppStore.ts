@@ -3,6 +3,7 @@ import { persist } from "zustand/middleware";
 import {
   TEST_PAGES,
   type AppInfo,
+  type BrowserConnectionDiagnostics,
   type BrowserConnectionInfo,
   type BrowserTarget,
   type DomSnapshotResult,
@@ -18,6 +19,10 @@ type PanelSizes = {
   right: number;
 };
 
+export type RightPanelSectionId = "diagnostics" | "element" | "selector" | "export";
+
+type RightPanelSections = Record<RightPanelSectionId, boolean>;
+
 type IpcStatus =
   | { state: "idle" }
   | { state: "ready"; message: string }
@@ -26,7 +31,7 @@ type IpcStatus =
 type BrowserConnectionStatus =
   | { state: "idle" }
   | { state: "connecting"; endpoint: string }
-  | { state: "connected"; endpoint: string; message: string }
+  | { state: "connected"; endpoint: string; message: string; diagnostics?: BrowserConnectionDiagnostics }
   | { state: "error"; endpoint: string; message: string };
 
 type AppStore = {
@@ -34,6 +39,7 @@ type AppStore = {
   theme: ThemeName;
   density: "comfortable" | "compact";
   panelSizes: PanelSizes;
+  rightPanelSections: RightPanelSections;
   ipcStatus: IpcStatus;
   appInfo: AppInfo | null;
   testPages: TestPage[];
@@ -47,6 +53,7 @@ type AppStore = {
   setTheme: (theme: ThemeName) => void;
   setDensity: (density: "comfortable" | "compact") => void;
   setPanelSize: (panel: keyof PanelSizes, width: number) => void;
+  toggleRightPanelSection: (section: RightPanelSectionId) => void;
   selectTestPage: (id: string) => void;
   connectBrowser: (endpoint: string) => Promise<void>;
   disconnectBrowser: () => Promise<void>;
@@ -69,6 +76,12 @@ export const useAppStore = create<AppStore>()(
         left: 312,
         right: 360
       },
+      rightPanelSections: {
+        diagnostics: false,
+        element: true,
+        selector: true,
+        export: false
+      },
       ipcStatus: { state: "idle" },
       appInfo: null,
       testPages: [],
@@ -86,6 +99,13 @@ export const useAppStore = create<AppStore>()(
           panelSizes: {
             ...state.panelSizes,
             [panel]: clamp(width, panel === "left" ? 240 : 300, panel === "left" ? 520 : 560)
+          }
+        })),
+      toggleRightPanelSection: (section) =>
+        set((state) => ({
+          rightPanelSections: {
+            ...state.rightPanelSections,
+            [section]: !state.rightPanelSections[section]
           }
         })),
       selectTestPage: (id) => set({ selectedTestPageId: id }),
@@ -186,6 +206,7 @@ export const useAppStore = create<AppStore>()(
         theme: state.theme,
         density: state.density,
         panelSizes: state.panelSizes,
+        rightPanelSections: state.rightPanelSections,
         selectedTestPageId: state.selectedTestPageId
       })
     }
@@ -194,7 +215,9 @@ export const useAppStore = create<AppStore>()(
 
 function getApi(): IpcApi {
   const fallbackApi: IpcApi = {
-    ping: async () => "browser-fallback",
+    ping: async () => {
+      throw new Error("Electron preload is not available.");
+    },
     getAppInfo: async () => ({
       name: "UI Explorer",
       version: "0.0.1",
@@ -202,12 +225,9 @@ function getApi(): IpcApi {
       electron: "not-loaded"
     }),
     listTestPages: async () => TEST_PAGES,
-    connectBrowser: async (endpoint) => ({
-      endpoint,
-      connected: false,
-      targetId: null,
-      targets: []
-    }),
+    connectBrowser: async () => {
+      throw new Error("Electron IPC is not available. Please run UI Explorer with npm.cmd run dev.");
+    },
     disconnectBrowser: async () => undefined,
     listBrowserTargets: async () => [],
     selectBrowserTarget: async () => emptySnapshot(),
@@ -236,7 +256,8 @@ function setConnectionInfo(
     browserConnection: {
       state: "connected",
       endpoint: info.endpoint,
-      message: info.targets.length > 0 ? "connected" : "no-targets"
+      message: info.targets.length > 0 ? "connected" : "no-targets",
+      diagnostics: info.diagnostics
     },
     browserTargets: info.targets,
     selectedBrowserTargetId: info.targetId,

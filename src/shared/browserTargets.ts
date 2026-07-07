@@ -10,8 +10,8 @@ type RawBrowserTarget = {
 
 const INSPECTABLE_TARGET_TYPES = new Set(["page", "iframe"]);
 
-export function toBrowserTargets(rawTargets: RawBrowserTarget[]): BrowserTarget[] {
-  return rawTargets.flatMap((target) => {
+export function toBrowserTargets(rawTargets: unknown): BrowserTarget[] {
+  return normalizeRawTargets(rawTargets).flatMap((target) => {
     if (
       typeof target.id !== "string" ||
       typeof target.type !== "string" ||
@@ -31,6 +31,25 @@ export function toBrowserTargets(rawTargets: RawBrowserTarget[]): BrowserTarget[
       }
     ];
   });
+}
+
+function normalizeRawTargets(rawTargets: unknown): RawBrowserTarget[] {
+  if (Array.isArray(rawTargets)) {
+    return rawTargets.filter((target): target is RawBrowserTarget => typeof target === "object" && target !== null);
+  }
+
+  if (
+    typeof rawTargets === "object" &&
+    rawTargets !== null &&
+    "value" in rawTargets &&
+    Array.isArray((rawTargets as { value?: unknown }).value)
+  ) {
+    return (rawTargets as { value: unknown[] }).value.filter(
+      (target): target is RawBrowserTarget => typeof target === "object" && target !== null
+    );
+  }
+
+  return [];
 }
 
 export function getDefaultBrowserTargetId(targets: BrowserTarget[]): string | null {

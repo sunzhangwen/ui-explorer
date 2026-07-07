@@ -58,6 +58,14 @@ export type BrowserConnectionInfo = {
   connected: boolean;
   targetId: string | null;
   targets: BrowserTarget[];
+  diagnostics?: BrowserConnectionDiagnostics;
+};
+
+export type BrowserConnectionDiagnostics = {
+  listUrl: string;
+  rawTargetCount: number;
+  inspectableTargetCount: number;
+  rawTargetTypes: string[];
 };
 
 export type IpcApi = {

@@ -3,6 +3,7 @@ import {
   AlertTriangle,
   Braces,
   ChevronDown,
+  ChevronRight,
   CheckCircle2,
   Code2,
   Columns3,
@@ -25,7 +26,7 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import type { PointerEvent, ReactNode } from "react";
 import { findElementSnapshot, flattenElementSnapshot, formatElementAttributes } from "../../shared/domSnapshot";
-import type { ElementSnapshot } from "../../shared/ipc";
+import type { BrowserTarget, ElementSnapshot } from "../../shared/ipc";
 import {
   applySelectorEdit,
   buildSelectorExports,
@@ -59,6 +60,7 @@ export function WorkbenchLayout(): JSX.Element {
     selectBrowserTarget,
     selectElement,
     highlightElements,
+    rightPanelSections,
     selectedBrowserTargetId,
     selectedElementId,
     selectedTestPageId,
@@ -67,6 +69,7 @@ export function WorkbenchLayout(): JSX.Element {
     setPanelSize,
     setTheme,
     testPages,
+    toggleRightPanelSection,
     theme,
     selectTestPage
   } = useAppStore();
@@ -161,6 +164,19 @@ export function WorkbenchLayout(): JSX.Element {
   const disconnect = () => {
     void disconnectBrowser();
   };
+  const connectionHint =
+    browserConnection.state === "error"
+      ? browserConnection.message
+      : browserConnection.state === "connected" && browserConnection.diagnostics
+        ? `raw=${browserConnection.diagnostics.rawTargetCount}, inspectable=${browserConnection.diagnostics.inspectableTargetCount}, types=${browserConnection.diagnostics.rawTargetTypes.join(",") || "-"}`
+        : t("connection.guide");
+  const isInspectingTarget = browserConnection.state === "connected" && Boolean(selectedTarget);
+  const diagnosticsSummary = `${ipcStatus.state === "ready" ? ipcStatus.message : ipcStatus.state} · ${domSnapshot?.nodeCount ?? 0} ${t("tree.nodes")}`;
+  const elementSummary = selectedElement ? `${selectedElement.tagName ?? selectedElement.nodeName} · ${selectedElement.visible ? t("properties.visible") : t("properties.hidden")}` : "-";
+  const selectorSummary = selectedCandidate
+    ? `${selectedCandidate.validation.matchCount} ${t("selector.matchCount")} · ${selectedCandidate.score.total}`
+    : "-";
+  const exportSummary = selectedCandidate ? t(`selector.export.${exportFormat}`) : "-";
 
   return (
     <div className="app-shell" data-density={density}>
@@ -220,7 +236,7 @@ export function WorkbenchLayout(): JSX.Element {
           <section className="connection-card">
             <span>{t("connection.status")}</span>
             <strong>{connectionLabel}</strong>
-            <p>{browserConnection.state === "error" ? browserConnection.message : t("connection.guide")}</p>
+            <p>{connectionHint}</p>
           </section>
 
           <PanelTitle icon={<Globe2 size={15} />} title={t("target.current")} />
@@ -293,19 +309,30 @@ export function WorkbenchLayout(): JSX.Element {
             </section>
 
             <section className="preview-panel">
-              <div className="preview-header">
-                <div>
-                  <h2>{t("preview.title")}</h2>
-                  <p>{selectedPage ? t(selectedPage.descriptionKey) : ""}</p>
-                </div>
-                {selectedPage ? (
-                  <a href={selectedPage.path} target="_blank" rel="noreferrer">
-                    {t("preview.openPage")}
-                    <ChevronDown size={14} />
-                  </a>
-                ) : null}
-              </div>
-              <iframe title={t("preview.title")} src={selectedPage?.path} />
+              {isInspectingTarget ? (
+                <TargetOverview
+                  nodeCount={domSnapshot?.nodeCount ?? 0}
+                  capturedAt={domSnapshot?.capturedAt ?? "-"}
+                  selectedElement={selectedElement}
+                  target={selectedTarget}
+                />
+              ) : (
+                <>
+                  <div className="preview-header">
+                    <div>
+                      <h2>{t("preview.title")}</h2>
+                      <p>{selectedPage ? t(selectedPage.descriptionKey) : ""}</p>
+                    </div>
+                    {selectedPage ? (
+                      <a href={selectedPage.path} target="_blank" rel="noreferrer">
+                        {t("preview.openPage")}
+                        <ChevronDown size={14} />
+                      </a>
+                    ) : null}
+                  </div>
+                  <iframe title={t("preview.title")} src={selectedPage?.path} />
+                </>
+              )}
             </section>
           </div>
         </section>
@@ -313,67 +340,178 @@ export function WorkbenchLayout(): JSX.Element {
         <div className="resize-handle" role="separator" aria-orientation="vertical" onPointerDown={beginResize("right")} />
 
         <aside className="side-panel right-panel" style={{ width: panelSizes.right }}>
-          <PanelTitle icon={<PanelRight size={15} />} title={t("panel.properties")} />
-          <section className="diagnostic-grid">
-            <DiagnosticItem label={t("diagnostics.ipc")} value={ipcStatus.state === "ready" ? ipcStatus.message : ipcStatus.state} />
-            <DiagnosticItem
-              label={t("diagnostics.app")}
-              value={appInfo ? `${appInfo.platform} / Electron ${appInfo.electron}` : "-"}
-            />
-            <DiagnosticItem label={t("diagnostics.target")} value={selectedTarget?.title || selectedTarget?.url || "-"} />
-            <DiagnosticItem label={t("diagnostics.nodes")} value={String(domSnapshot?.nodeCount ?? 0)} />
-            <DiagnosticItem label={t("diagnostics.capturedAt")} value={domSnapshot?.capturedAt ?? "-"} />
-          </section>
-          <ElementDetails element={selectedElement} />
+          <CollapsibleSection
+            icon={<PanelRight size={15} />}
+            open={rightPanelSections.diagnostics}
+            summary={diagnosticsSummary}
+            title={t("panel.properties")}
+            onToggle={() => toggleRightPanelSection("diagnostics")}
+          >
+            <section className="diagnostic-grid">
+              <DiagnosticItem label={t("diagnostics.ipc")} value={ipcStatus.state === "ready" ? ipcStatus.message : ipcStatus.state} />
+              <DiagnosticItem
+                label={t("diagnostics.app")}
+                value={appInfo ? `${appInfo.platform} / Electron ${appInfo.electron}` : "-"}
+              />
+              <DiagnosticItem label={t("diagnostics.target")} value={selectedTarget?.title || selectedTarget?.url || "-"} />
+              <DiagnosticItem label={t("diagnostics.nodes")} value={String(domSnapshot?.nodeCount ?? 0)} />
+              <DiagnosticItem label={t("diagnostics.capturedAt")} value={domSnapshot?.capturedAt ?? "-"} />
+            </section>
+          </CollapsibleSection>
 
-          <PanelTitle icon={<FileJson size={15} />} title={t("panel.selector")} />
-          <SelectorPanel
-            candidates={selectorCandidates}
-            selectedCandidate={selectedCandidate}
-            selectedCandidateId={activeCandidateId}
-            drafts={selectorDrafts}
-            onSelectCandidate={setSelectedCandidateId}
-            onEdit={editSelector}
-          />
-          <div className="editor-shell">
-            <div className="editor-title">
-              <Code2 size={14} />
-              {t("selector.exportPreview")}
-              <div className="editor-tabs" role="tablist" aria-label={t("selector.exportPreview")}>
-                {(["json", "playwright", "selenium"] as const).map((format) => (
-                  <button
-                    type="button"
-                    key={format}
-                    className={format === exportFormat ? "selected" : ""}
-                    onClick={() => setExportFormat(format)}
-                  >
-                    {t(`selector.export.${format}`)}
-                  </button>
-                ))}
-              </div>
-              <button type="button" className="icon-button" onClick={copyExport} aria-label={t("selector.copy")}>
-                <Copy size={13} />
-              </button>
-            </div>
-            <Editor
-              height="190px"
-              language={exportFormat === "json" ? "json" : exportFormat === "playwright" ? "typescript" : "python"}
-              value={previewSnippet}
-              options={{
-                readOnly: true,
-                minimap: { enabled: false },
-                scrollBeyondLastLine: false,
-                fontSize: 12,
-                lineNumbers: "off",
-                folding: false,
-                renderLineHighlight: "none"
-              }}
-              theme={theme === "dark" ? "vs-dark" : "light"}
+          <CollapsibleSection
+            icon={<Braces size={15} />}
+            open={rightPanelSections.element}
+            summary={elementSummary}
+            title={t("properties.selected")}
+            onToggle={() => toggleRightPanelSection("element")}
+          >
+            <ElementDetails element={selectedElement} />
+          </CollapsibleSection>
+
+          <CollapsibleSection
+            icon={<FileJson size={15} />}
+            open={rightPanelSections.selector}
+            summary={selectorSummary}
+            title={t("panel.selector")}
+            onToggle={() => toggleRightPanelSection("selector")}
+          >
+            <SelectorPanel
+              candidates={selectorCandidates}
+              selectedCandidate={selectedCandidate}
+              selectedCandidateId={activeCandidateId}
+              drafts={selectorDrafts}
+              onSelectCandidate={setSelectedCandidateId}
+              onEdit={editSelector}
             />
-          </div>
+          </CollapsibleSection>
+
+          <CollapsibleSection
+            icon={<Code2 size={15} />}
+            open={rightPanelSections.export}
+            summary={exportSummary}
+            title={t("selector.exportPreview")}
+            onToggle={() => toggleRightPanelSection("export")}
+          >
+            <div className="editor-shell">
+              <div className="editor-title">
+                <Code2 size={14} />
+                {t("selector.exportPreview")}
+                <div className="editor-tabs" role="tablist" aria-label={t("selector.exportPreview")}>
+                  {(["json", "playwright", "selenium"] as const).map((format) => (
+                    <button
+                      type="button"
+                      key={format}
+                      className={format === exportFormat ? "selected" : ""}
+                      onClick={() => setExportFormat(format)}
+                    >
+                      {t(`selector.export.${format}`)}
+                    </button>
+                  ))}
+                </div>
+                <button type="button" className="icon-button" onClick={copyExport} aria-label={t("selector.copy")}>
+                  <Copy size={13} />
+                </button>
+              </div>
+              <Editor
+                height="190px"
+                language={exportFormat === "json" ? "json" : exportFormat === "playwright" ? "typescript" : "python"}
+                value={previewSnippet}
+                options={{
+                  readOnly: true,
+                  minimap: { enabled: false },
+                  scrollBeyondLastLine: false,
+                  fontSize: 12,
+                  lineNumbers: "off",
+                  folding: false,
+                  renderLineHighlight: "none"
+                }}
+                theme={theme === "dark" ? "vs-dark" : "light"}
+              />
+            </div>
+          </CollapsibleSection>
         </aside>
       </main>
     </div>
+  );
+}
+
+function TargetOverview({
+  capturedAt,
+  nodeCount,
+  selectedElement,
+  target
+}: {
+  capturedAt: string;
+  nodeCount: number;
+  selectedElement: ElementSnapshot | null;
+  target: BrowserTarget | null;
+}): JSX.Element {
+  const { t } = useI18n();
+
+  return (
+    <>
+      <div className="preview-header">
+        <div>
+          <h2>{t("preview.currentTarget")}</h2>
+          <p>{target?.url ?? "-"}</p>
+        </div>
+        <span className="target-kind">{target?.type ?? "-"}</span>
+      </div>
+      <div className="target-overview">
+        <section className="target-hero">
+          <span>{t("diagnostics.target")}</span>
+          <h3>{target?.title || target?.url || "-"}</h3>
+          <p>{target?.url ?? "-"}</p>
+        </section>
+        <div className="target-metrics">
+          <Metric label={t("diagnostics.nodes")} value={String(nodeCount)} />
+          <Metric label={t("diagnostics.capturedAt")} value={capturedAt} />
+          <Metric label={t("properties.tag")} value={selectedElement?.tagName ?? "-"} />
+          <Metric label={t("properties.visible")} value={selectedElement ? (selectedElement.visible ? t("properties.visible") : t("properties.hidden")) : "-"} />
+        </div>
+        <section className="target-selection">
+          <h3>{t("preview.selectedSnapshot")}</h3>
+          {selectedElement ? (
+            <div className="property-stack">
+              <PropertyRow label={t("properties.nodeName")} value={selectedElement.nodeName} />
+              <PropertyRow label={t("properties.text")} value={selectedElement.text || "-"} />
+              <PropertyRow label={t("properties.attributes")} value={formatElementAttributes(selectedElement) || "-"} />
+            </div>
+          ) : (
+            <p className="empty-copy">{t("empty.properties")}</p>
+          )}
+        </section>
+      </div>
+    </>
+  );
+}
+
+function CollapsibleSection({
+  children,
+  icon,
+  onToggle,
+  open,
+  summary,
+  title
+}: {
+  children: ReactNode;
+  icon: ReactNode;
+  onToggle: () => void;
+  open: boolean;
+  summary: string;
+  title: string;
+}): JSX.Element {
+  return (
+    <section className="collapsible-section" data-open={open}>
+      <button type="button" className="collapsible-header" onClick={onToggle} aria-expanded={open}>
+        {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+        {icon}
+        <span>{title}</span>
+        <small>{summary}</small>
+      </button>
+      {open ? <div className="collapsible-body">{children}</div> : null}
+    </section>
   );
 }
 

@@ -1,6 +1,10 @@
+import { createHash, randomBytes } from "node:crypto";
+import net from "node:net";
+import tls from "node:tls";
 import { getDefaultBrowserTargetId, toBrowserTargets } from "../shared/browserTargets.js";
 import { normalizeDebugEndpoint } from "../shared/domSnapshot.js";
-import type { BrowserConnectionInfo, BrowserTarget, DomSnapshotResult } from "../shared/ipc.js";
+import type { BrowserConnectionDiagnostics, BrowserConnectionInfo, BrowserTarget, DomSnapshotResult } from "../shared/ipc.js";
+import { encodeClientCloseFrame, encodeClientTextFrame, extractServerTextFrames } from "./webSocketFrames.js";
 
 type CdpResponse<T> = {
   id: number;
@@ -28,38 +32,31 @@ type PendingRequest = {
 };
 
 class CdpTargetClient {
-  private socket: WebSocket | null = null;
+  private socket: net.Socket | tls.TLSSocket | null = null;
   private sequence = 0;
   private pending = new Map<number, PendingRequest>();
+  private frameBuffer: Buffer<ArrayBufferLike> = Buffer.alloc(0);
 
   async connect(webSocketDebuggerUrl: string): Promise<void> {
     this.disconnect();
-
-    if (typeof WebSocket === "undefined") {
-      throw new Error("WebSocket is not available in this runtime.");
-    }
-
-    await new Promise<void>((resolve, reject) => {
-      const socket = new WebSocket(webSocketDebuggerUrl);
-      this.socket = socket;
-
-      socket.addEventListener("open", () => resolve(), { once: true });
-      socket.addEventListener("error", () => reject(new Error("Unable to open CDP websocket.")), { once: true });
-      socket.addEventListener("message", (event) => this.handleMessage(event));
-      socket.addEventListener("close", () => this.rejectPending(new Error("CDP websocket closed.")));
-    });
+    this.frameBuffer = Buffer.alloc(0);
+    this.socket = await connectWebSocket(webSocketDebuggerUrl);
+    this.socket.on("data", (chunk) => this.handleData(chunk));
+    this.socket.on("error", (error) => this.rejectPending(error instanceof Error ? error : new Error(String(error))));
+    this.socket.on("close", () => this.rejectPending(new Error("CDP websocket closed.")));
   }
 
   disconnect(): void {
-    if (this.socket && this.socket.readyState <= WebSocket.OPEN) {
-      this.socket.close();
+    if (this.socket && !this.socket.destroyed) {
+      this.socket.write(encodeClientCloseFrame());
+      this.socket.destroy();
     }
     this.socket = null;
     this.rejectPending(new Error("CDP target disconnected."));
   }
 
   async send<T>(method: string, params?: Record<string, unknown>): Promise<T> {
-    if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
+    if (!this.socket || this.socket.destroyed) {
       throw new Error("No CDP target is connected.");
     }
 
@@ -71,34 +68,39 @@ class CdpTargetClient {
         resolve: (value) => resolve(value as T),
         reject
       });
-      this.socket?.send(payload);
+      this.socket?.write(encodeClientTextFrame(payload));
     });
   }
 
-  private handleMessage(event: MessageEvent): void {
-    const raw = typeof event.data === "string" ? event.data : "";
-    if (!raw) {
-      return;
+  private handleData(chunk: Buffer<ArrayBufferLike>): void {
+    this.frameBuffer = Buffer.concat([this.frameBuffer, chunk]);
+    const extracted = extractServerTextFrames(this.frameBuffer);
+    this.frameBuffer = extracted.remaining;
+
+    for (const raw of extracted.messages) {
+      const message = JSON.parse(raw) as Partial<CdpResponse<unknown>>;
+      if (typeof message.id !== "number") {
+        continue;
+      }
+
+      const pending = this.pending.get(message.id);
+      if (!pending) {
+        continue;
+      }
+
+      this.pending.delete(message.id);
+
+      if (message.error) {
+        pending.reject(new Error(message.error.message));
+        continue;
+      }
+
+      pending.resolve(message.result);
     }
 
-    const message = JSON.parse(raw) as Partial<CdpResponse<unknown>>;
-    if (typeof message.id !== "number") {
-      return;
+    if (extracted.closed) {
+      this.rejectPending(new Error("CDP websocket closed."));
     }
-
-    const pending = this.pending.get(message.id);
-    if (!pending) {
-      return;
-    }
-
-    this.pending.delete(message.id);
-
-    if (message.error) {
-      pending.reject(new Error(message.error.message));
-      return;
-    }
-
-    pending.resolve(message.result);
   }
 
   private rejectPending(error: Error): void {
@@ -109,9 +111,73 @@ class CdpTargetClient {
   }
 }
 
+async function connectWebSocket(webSocketDebuggerUrl: string): Promise<net.Socket | tls.TLSSocket> {
+  const url = new URL(webSocketDebuggerUrl);
+  const isSecure = url.protocol === "wss:";
+  const port = Number(url.port || (isSecure ? 443 : 80));
+  const key = randomBytes(16).toString("base64");
+  const expectedAccept = createHash("sha1")
+    .update(`${key}258EAFA5-E914-47DA-95CA-C5AB0DC85B11`)
+    .digest("base64");
+
+  const socket = await new Promise<net.Socket | tls.TLSSocket>((resolve, reject) => {
+    const client = isSecure ? tls.connect({ host: url.hostname, port }) : net.connect({ host: url.hostname, port });
+    client.once("connect", () => resolve(client));
+    client.once("error", reject);
+  });
+
+  const path = `${url.pathname}${url.search}`;
+  const host = url.port ? `${url.hostname}:${url.port}` : url.hostname;
+  socket.write(
+    [
+      `GET ${path} HTTP/1.1`,
+      `Host: ${host}`,
+      "Upgrade: websocket",
+      "Connection: Upgrade",
+      `Sec-WebSocket-Key: ${key}`,
+      "Sec-WebSocket-Version: 13",
+      "",
+      ""
+    ].join("\r\n")
+  );
+
+  const response = await readHandshakeResponse(socket);
+  if (!/^HTTP\/1\.1 101\b/.test(response) || !response.toLowerCase().includes(`sec-websocket-accept: ${expectedAccept.toLowerCase()}`)) {
+    socket.destroy();
+    throw new Error("CDP websocket handshake failed.");
+  }
+
+  return socket;
+}
+
+async function readHandshakeResponse(socket: net.Socket | tls.TLSSocket): Promise<string> {
+  return new Promise((resolve, reject) => {
+    let buffer = Buffer.alloc(0);
+    const onData = (chunk: Buffer) => {
+      buffer = Buffer.concat([buffer, chunk]);
+      const headerEnd = buffer.indexOf("\r\n\r\n");
+      if (headerEnd === -1) {
+        return;
+      }
+
+      socket.off("data", onData);
+      socket.off("error", onError);
+      resolve(buffer.subarray(0, headerEnd).toString("utf8"));
+    };
+    const onError = (error: Error) => {
+      socket.off("data", onData);
+      reject(error);
+    };
+
+    socket.on("data", onData);
+    socket.once("error", onError);
+  });
+}
+
 export class BrowserSession {
   private endpoint: string | null = null;
   private targets: BrowserTarget[] = [];
+  private diagnostics: BrowserConnectionDiagnostics | null = null;
   private selectedTargetId: string | null = null;
   private targetClient = new CdpTargetClient();
 
@@ -131,6 +197,7 @@ export class BrowserSession {
     this.targetClient.disconnect();
     this.endpoint = null;
     this.targets = [];
+    this.diagnostics = null;
     this.selectedTargetId = null;
   }
 
@@ -166,13 +233,23 @@ export class BrowserSession {
       return [];
     }
 
-    const response = await fetch(`${this.endpoint}/json/list`);
+    const listUrl = `${this.endpoint}/json/list`;
+    const response = await fetch(listUrl);
     if (!response.ok) {
       throw new Error(`Unable to read targets: HTTP ${response.status}`);
     }
 
-    const rawTargets = (await response.json()) as Parameters<typeof toBrowserTargets>[0];
-    return toBrowserTargets(rawTargets);
+    const rawTargets = await response.json();
+    const targets = toBrowserTargets(rawTargets);
+    this.diagnostics = {
+      listUrl,
+      rawTargetCount: countRawTargets(rawTargets),
+      inspectableTargetCount: targets.length,
+      rawTargetTypes: collectRawTargetTypes(rawTargets)
+    };
+
+    console.info("[ui-explorer] browser targets", this.diagnostics);
+    return targets;
   }
 
   private async connectTarget(targetId: string): Promise<void> {
@@ -209,9 +286,43 @@ export class BrowserSession {
       endpoint: this.endpoint ?? "",
       connected: Boolean(this.endpoint),
       targetId: this.selectedTargetId,
-      targets: this.targets
+      targets: this.targets,
+      diagnostics: this.diagnostics ?? undefined
     };
   }
+}
+
+function getRawTargetArray(rawTargets: unknown): unknown[] {
+  if (Array.isArray(rawTargets)) {
+    return rawTargets;
+  }
+
+  if (
+    typeof rawTargets === "object" &&
+    rawTargets !== null &&
+    "value" in rawTargets &&
+    Array.isArray((rawTargets as { value?: unknown }).value)
+  ) {
+    return (rawTargets as { value: unknown[] }).value;
+  }
+
+  return [];
+}
+
+function countRawTargets(rawTargets: unknown): number {
+  return getRawTargetArray(rawTargets).length;
+}
+
+function collectRawTargetTypes(rawTargets: unknown): string[] {
+  return Array.from(
+    new Set(
+      getRawTargetArray(rawTargets)
+        .map((target) =>
+          typeof target === "object" && target !== null && "type" in target ? (target as { type?: unknown }).type : undefined
+        )
+        .filter((type): type is string => typeof type === "string")
+    )
+  );
 }
 
 const SNAPSHOT_SCRIPT = `(() => {

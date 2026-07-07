@@ -4,6 +4,6 @@
     "outDir": ".tmp-tests",
     "noEmit": false
   },
-  "include": ["src/shared/**/*.ts"],
+  "include": ["src/shared/**/*.ts", "src/main/webSocketFrames.ts", "src/main/webSocketFrames.test.ts"],
   "exclude": []
 }
