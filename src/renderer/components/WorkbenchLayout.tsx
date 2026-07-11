@@ -26,7 +26,7 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import type { PointerEvent, ReactNode } from "react";
 import { findElementSnapshot, flattenElementSnapshot, formatElementAttributes } from "../../shared/domSnapshot";
-import type { BrowserTarget, ElementSnapshot } from "../../shared/ipc";
+import type { ElementSnapshot } from "../../shared/ipc";
 import {
   applySelectorEdit,
   buildSelectorExports,
@@ -77,6 +77,7 @@ export function WorkbenchLayout(): JSX.Element {
   const [dragging, setDragging] = useState<ResizeSide | null>(null);
   const [debugEndpoint, setDebugEndpoint] = useState("localhost:9222");
   const [treeScrollTop, setTreeScrollTop] = useState(0);
+  const [collapsedNodeIds, setCollapsedNodeIds] = useState<Set<string>>(() => new Set());
   const [selectedCandidateId, setSelectedCandidateId] = useState<string | null>(null);
   const [selectorDrafts, setSelectorDrafts] = useState<Record<string, SelectorCandidate>>({});
   const [exportFormat, setExportFormat] = useState<ExportFormat>("json");
@@ -86,6 +87,10 @@ export function WorkbenchLayout(): JSX.Element {
     [selectedTestPageId, testPages]
   );
   const treeRows = useMemo(() => flattenElementSnapshot(domSnapshot?.root ?? null), [domSnapshot]);
+  const visibleTreeRows = useMemo(
+    () => flattenVisibleElementSnapshot(domSnapshot?.root ?? null, collapsedNodeIds),
+    [domSnapshot?.root, collapsedNodeIds]
+  );
   const selectedElement = useMemo(
     () => findElementSnapshot(domSnapshot?.root ?? null, selectedElementId ?? ""),
     [domSnapshot, selectedElementId]
@@ -113,6 +118,11 @@ export function WorkbenchLayout(): JSX.Element {
   }, [domSnapshot?.capturedAt, selectedElementId, selectorCandidates]);
 
   useEffect(() => {
+    setCollapsedNodeIds(new Set());
+    setTreeScrollTop(0);
+  }, [domSnapshot?.capturedAt]);
+
+  useEffect(() => {
     if (!selectedCandidate || browserConnection.state !== "connected") {
       return;
     }
@@ -123,6 +133,18 @@ export function WorkbenchLayout(): JSX.Element {
   const editSelector = (candidate: SelectorCandidate, edit: SelectorEdit) => {
     const edited = applySelectorEdit(domSnapshot?.root ?? null, candidate, edit);
     setSelectorDrafts((current) => ({ ...current, [candidate.id]: edited }));
+  };
+
+  const toggleTreeNode = (elementId: string) => {
+    setCollapsedNodeIds((current) => {
+      const next = new Set(current);
+      if (next.has(elementId)) {
+        next.delete(elementId);
+      } else {
+        next.add(elementId);
+      }
+      return next;
+    });
   };
 
   const copyExport = () => {
@@ -171,10 +193,11 @@ export function WorkbenchLayout(): JSX.Element {
         ? `raw=${browserConnection.diagnostics.rawTargetCount}, inspectable=${browserConnection.diagnostics.inspectableTargetCount}, types=${browserConnection.diagnostics.rawTargetTypes.join(",") || "-"}`
         : t("connection.guide");
   const isInspectingTarget = browserConnection.state === "connected" && Boolean(selectedTarget);
-  const diagnosticsSummary = `${ipcStatus.state === "ready" ? ipcStatus.message : ipcStatus.state} · ${domSnapshot?.nodeCount ?? 0} ${t("tree.nodes")}`;
-  const elementSummary = selectedElement ? `${selectedElement.tagName ?? selectedElement.nodeName} · ${selectedElement.visible ? t("properties.visible") : t("properties.hidden")}` : "-";
+  const diagnosticsSummary = `${ipcStatus.state === "ready" ? ipcStatus.message : ipcStatus.state} / ${domSnapshot?.nodeCount ?? 0} ${t("tree.nodes")}`;
+  const snapshotSummary = selectedElement ? `${selectedElement.tagName ?? selectedElement.nodeName} / ${selectedElement.text || "-"}` : "-";
+  const elementSummary = selectedElement ? `${selectedElement.tagName ?? selectedElement.nodeName} / ${selectedElement.visible ? t("properties.visible") : t("properties.hidden")}` : "-";
   const selectorSummary = selectedCandidate
-    ? `${selectedCandidate.validation.matchCount} ${t("selector.matchCount")} · ${selectedCandidate.score.total}`
+    ? `${selectedCandidate.validation.matchCount} ${t("selector.matchCount")} / ${selectedCandidate.score.total}`
     : "-";
   const exportSummary = selectedCandidate ? t(`selector.export.${exportFormat}`) : "-";
 
@@ -287,7 +310,7 @@ export function WorkbenchLayout(): JSX.Element {
             </div>
           </div>
 
-          <div className="split-center">
+          <div className={isInspectingTarget ? "split-center target-mode" : "split-center"}>
             <section className="tree-panel">
               <div className="tree-summary">
                 <Braces size={16} />
@@ -299,41 +322,34 @@ export function WorkbenchLayout(): JSX.Element {
                 <p className="empty-copy">{t("tree.empty")}</p>
               ) : (
                 <VirtualTree
-                  rows={treeRows}
+                  collapsedNodeIds={collapsedNodeIds}
+                  rows={visibleTreeRows}
                   selectedElementId={selectedElementId}
                   scrollTop={treeScrollTop}
                   onScrollTopChange={setTreeScrollTop}
                   onSelect={(id) => void selectElement(id)}
+                  onToggle={toggleTreeNode}
                 />
               )}
             </section>
 
-            <section className="preview-panel">
-              {isInspectingTarget ? (
-                <TargetOverview
-                  nodeCount={domSnapshot?.nodeCount ?? 0}
-                  capturedAt={domSnapshot?.capturedAt ?? "-"}
-                  selectedElement={selectedElement}
-                  target={selectedTarget}
-                />
-              ) : (
-                <>
-                  <div className="preview-header">
-                    <div>
-                      <h2>{t("preview.title")}</h2>
-                      <p>{selectedPage ? t(selectedPage.descriptionKey) : ""}</p>
-                    </div>
-                    {selectedPage ? (
-                      <a href={selectedPage.path} target="_blank" rel="noreferrer">
-                        {t("preview.openPage")}
-                        <ChevronDown size={14} />
-                      </a>
-                    ) : null}
+            {isInspectingTarget ? null : (
+              <section className="preview-panel">
+                <div className="preview-header">
+                  <div>
+                    <h2>{t("preview.title")}</h2>
+                    <p>{selectedPage ? t(selectedPage.descriptionKey) : ""}</p>
                   </div>
-                  <iframe title={t("preview.title")} src={selectedPage?.path} />
-                </>
-              )}
-            </section>
+                  {selectedPage ? (
+                    <a href={selectedPage.path} target="_blank" rel="noreferrer">
+                      {t("preview.openPage")}
+                      <ChevronDown size={14} />
+                    </a>
+                  ) : null}
+                </div>
+                <iframe title={t("preview.title")} src={selectedPage?.path} />
+              </section>
+            )}
           </div>
         </section>
 
@@ -357,6 +373,16 @@ export function WorkbenchLayout(): JSX.Element {
               <DiagnosticItem label={t("diagnostics.nodes")} value={String(domSnapshot?.nodeCount ?? 0)} />
               <DiagnosticItem label={t("diagnostics.capturedAt")} value={domSnapshot?.capturedAt ?? "-"} />
             </section>
+          </CollapsibleSection>
+
+          <CollapsibleSection
+            icon={<Braces size={15} />}
+            open={rightPanelSections.snapshot}
+            summary={snapshotSummary}
+            title={t("preview.selectedSnapshot")}
+            onToggle={() => toggleRightPanelSection("snapshot")}
+          >
+            <ElementSnapshotPanel element={selectedElement} />
           </CollapsibleSection>
 
           <CollapsibleSection
@@ -436,54 +462,19 @@ export function WorkbenchLayout(): JSX.Element {
   );
 }
 
-function TargetOverview({
-  capturedAt,
-  nodeCount,
-  selectedElement,
-  target
-}: {
-  capturedAt: string;
-  nodeCount: number;
-  selectedElement: ElementSnapshot | null;
-  target: BrowserTarget | null;
-}): JSX.Element {
+function ElementSnapshotPanel({ element }: { element: ElementSnapshot | null }): JSX.Element {
   const { t } = useI18n();
 
+  if (!element) {
+    return <p className="empty-copy">{t("empty.properties")}</p>;
+  }
+
   return (
-    <>
-      <div className="preview-header">
-        <div>
-          <h2>{t("preview.currentTarget")}</h2>
-          <p>{target?.url ?? "-"}</p>
-        </div>
-        <span className="target-kind">{target?.type ?? "-"}</span>
-      </div>
-      <div className="target-overview">
-        <section className="target-hero">
-          <span>{t("diagnostics.target")}</span>
-          <h3>{target?.title || target?.url || "-"}</h3>
-          <p>{target?.url ?? "-"}</p>
-        </section>
-        <div className="target-metrics">
-          <Metric label={t("diagnostics.nodes")} value={String(nodeCount)} />
-          <Metric label={t("diagnostics.capturedAt")} value={capturedAt} />
-          <Metric label={t("properties.tag")} value={selectedElement?.tagName ?? "-"} />
-          <Metric label={t("properties.visible")} value={selectedElement ? (selectedElement.visible ? t("properties.visible") : t("properties.hidden")) : "-"} />
-        </div>
-        <section className="target-selection">
-          <h3>{t("preview.selectedSnapshot")}</h3>
-          {selectedElement ? (
-            <div className="property-stack">
-              <PropertyRow label={t("properties.nodeName")} value={selectedElement.nodeName} />
-              <PropertyRow label={t("properties.text")} value={selectedElement.text || "-"} />
-              <PropertyRow label={t("properties.attributes")} value={formatElementAttributes(selectedElement) || "-"} />
-            </div>
-          ) : (
-            <p className="empty-copy">{t("empty.properties")}</p>
-          )}
-        </section>
-      </div>
-    </>
+    <div className="property-stack snapshot-panel">
+      <PropertyRow label={t("properties.nodeName")} value={element.nodeName} />
+      <PropertyRow label={t("properties.text")} value={element.text || "-"} />
+      <PropertyRow label={t("properties.attributes")} value={formatElementAttributes(element) || "-"} />
+    </div>
   );
 }
 
@@ -655,15 +646,37 @@ function Metric({ label, value }: { label: string; value: string }): JSX.Element
   );
 }
 
+function flattenVisibleElementSnapshot(root: ElementSnapshot | null, collapsedNodeIds: Set<string>): ElementSnapshot[] {
+  if (!root) {
+    return [];
+  }
+
+  const rows: ElementSnapshot[] = [];
+  const visit = (node: ElementSnapshot) => {
+    rows.push(node);
+    if (collapsedNodeIds.has(node.id)) {
+      return;
+    }
+    node.children.forEach(visit);
+  };
+
+  visit(root);
+  return rows;
+}
+
 function VirtualTree({
+  collapsedNodeIds,
   onScrollTopChange,
   onSelect,
+  onToggle,
   rows,
   scrollTop,
   selectedElementId
 }: {
+  collapsedNodeIds: Set<string>;
   onScrollTopChange: (value: number) => void;
   onSelect: (id: string) => void;
+  onToggle: (id: string) => void;
   rows: ElementSnapshot[];
   scrollTop: number;
   selectedElementId: string | null;
@@ -675,21 +688,34 @@ function VirtualTree({
   return (
     <div className="tree-list" onScroll={(event) => onScrollTopChange(event.currentTarget.scrollTop)}>
       <div className="tree-spacer" style={{ height: rows.length * TREE_ROW_HEIGHT }}>
-        {visibleRows.map((row, index) => (
-          <button
-            type="button"
-            className={row.id === selectedElementId ? "tree-row selected" : "tree-row"}
-            key={row.id}
-            style={{
-              paddingLeft: 10 + row.depth * 16,
-              transform: `translateY(${(startIndex + index) * TREE_ROW_HEIGHT}px)`
-            }}
-            onClick={() => onSelect(row.id)}
-          >
-            <span>{row.tagName ?? row.nodeName}</span>
-            <small>{formatElementAttributes(row)}</small>
-          </button>
-        ))}
+        {visibleRows.map((row, index) => {
+          const hasChildren = row.children.length > 0;
+          const isCollapsed = collapsedNodeIds.has(row.id);
+          return (
+            <div
+              className={row.id === selectedElementId ? "tree-row selected" : "tree-row"}
+              key={row.id}
+              style={{
+                paddingLeft: 6 + row.depth * 16,
+                transform: `translateY(${(startIndex + index) * TREE_ROW_HEIGHT}px)`
+              }}
+            >
+              <button
+                type="button"
+                className="tree-toggle"
+                aria-label={isCollapsed ? "Expand node" : "Collapse node"}
+                disabled={!hasChildren}
+                onClick={() => onToggle(row.id)}
+              >
+                {isCollapsed ? <ChevronRight size={13} /> : <ChevronDown size={13} />}
+              </button>
+              <button type="button" className="tree-node-main" onClick={() => onSelect(row.id)}>
+                <span>{row.tagName ?? row.nodeName}</span>
+                <small>{formatElementAttributes(row)}</small>
+              </button>
+            </div>
+          );
+        })}
       </div>
     </div>
   );

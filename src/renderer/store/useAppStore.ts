@@ -19,7 +19,7 @@ type PanelSizes = {
   right: number;
 };
 
-export type RightPanelSectionId = "diagnostics" | "element" | "selector" | "export";
+export type RightPanelSectionId = "diagnostics" | "snapshot" | "element" | "selector" | "export";
 
 type RightPanelSections = Record<RightPanelSectionId, boolean>;
 
@@ -66,6 +66,14 @@ type AppStore = {
 
 const clamp = (value: number, min: number, max: number): number => Math.min(Math.max(value, min), max);
 
+const defaultRightPanelSections: RightPanelSections = {
+  diagnostics: false,
+  snapshot: true,
+  element: true,
+  selector: true,
+  export: false
+};
+
 export const useAppStore = create<AppStore>()(
   persist(
     (set, get) => ({
@@ -76,12 +84,7 @@ export const useAppStore = create<AppStore>()(
         left: 312,
         right: 360
       },
-      rightPanelSections: {
-        diagnostics: false,
-        element: true,
-        selector: true,
-        export: false
-      },
+      rightPanelSections: defaultRightPanelSections,
       ipcStatus: { state: "idle" },
       appInfo: null,
       testPages: [],
@@ -104,8 +107,9 @@ export const useAppStore = create<AppStore>()(
       toggleRightPanelSection: (section) =>
         set((state) => ({
           rightPanelSections: {
+            ...defaultRightPanelSections,
             ...state.rightPanelSections,
-            [section]: !state.rightPanelSections[section]
+            [section]: !(state.rightPanelSections[section] ?? defaultRightPanelSections[section])
           }
         })),
       selectTestPage: (id) => set({ selectedTestPageId: id }),
@@ -208,7 +212,22 @@ export const useAppStore = create<AppStore>()(
         panelSizes: state.panelSizes,
         rightPanelSections: state.rightPanelSections,
         selectedTestPageId: state.selectedTestPageId
-      })
+      }),
+      merge: (persisted, current) => {
+        const persistedState = persisted as Partial<AppStore>;
+        return {
+          ...current,
+          ...persistedState,
+          panelSizes: {
+            ...current.panelSizes,
+            ...persistedState.panelSizes
+          },
+          rightPanelSections: {
+            ...defaultRightPanelSections,
+            ...persistedState.rightPanelSections
+          }
+        };
+      }
     }
   )
 );

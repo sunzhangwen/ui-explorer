@@ -357,6 +357,10 @@ select {
   padding: 12px;
 }
 
+.split-center.target-mode {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .tree-summary {
   gap: var(--space-2);
   min-height: 28px;
@@ -384,11 +388,9 @@ select {
   left: 0;
   right: 0;
   display: grid;
-  grid-template-columns: minmax(72px, auto) minmax(0, 1fr);
+  grid-template-columns: 24px minmax(0, 1fr);
   align-items: center;
-  gap: var(--space-2);
   height: var(--tree-row-height);
-  padding-block: 0;
   padding-right: var(--space-2);
   border: 0;
   border-left: 2px solid transparent;
@@ -405,7 +407,40 @@ select {
   background: rgb(var(--color-accent) / 0.12);
 }
 
-.tree-row small,
+.tree-toggle,
+.tree-node-main {
+  border: 0;
+  background: transparent;
+  color: inherit;
+}
+
+.tree-toggle {
+  display: grid;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  padding: 0;
+  color: rgb(var(--color-muted));
+}
+
+.tree-toggle:disabled {
+  visibility: hidden;
+}
+
+.tree-node-main {
+  display: grid;
+  grid-template-columns: minmax(72px, auto) minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  font-family: inherit;
+  font-size: inherit;
+  text-align: left;
+}
+
+.tree-node-main small,
 .target-page small {
   min-width: 0;
   overflow: hidden;
@@ -448,64 +483,6 @@ select {
   height: 100%;
   border: 0;
   background: white;
-}
-
-.target-kind {
-  flex: 0 0 auto;
-  padding: 5px 8px;
-  border: 1px solid rgb(var(--color-border));
-  border-radius: var(--radius-ui);
-  color: rgb(var(--color-muted));
-  font-family: var(--font-mono);
-  font-size: var(--font-size-xs);
-}
-
-.target-overview {
-  display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr);
-  gap: 12px;
-  min-height: 0;
-  padding: 12px;
-  overflow: auto;
-}
-
-.target-hero,
-.target-selection {
-  display: grid;
-  gap: 8px;
-  padding: 12px;
-  border: 1px solid rgb(var(--color-border));
-  border-radius: var(--radius-ui);
-  background: rgb(var(--color-panel) / 0.52);
-}
-
-.target-hero span,
-.target-selection h3 {
-  margin: 0;
-  color: rgb(var(--color-muted));
-  font-size: var(--font-size-xs);
-  font-weight: 700;
-  text-transform: uppercase;
-}
-
-.target-hero h3 {
-  margin: 0;
-  font-size: 20px;
-  line-height: 1.25;
-}
-
-.target-hero p {
-  margin: 0;
-  overflow-wrap: anywhere;
-  color: rgb(var(--color-muted));
-  font-family: var(--font-mono);
-  font-size: var(--font-size-sm);
-}
-
-.target-metrics {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: var(--space-2);
 }
 
 .status-pill {
