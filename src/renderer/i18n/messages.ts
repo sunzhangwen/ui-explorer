@@ -9,6 +9,7 @@ export type MessageKey =
   | "toolbar.density"
   | "toolbar.ipcReady"
   | "toolbar.ipcError"
+  | "toolbar.pickElement"
   | "panel.targets"
   | "panel.explorer"
   | "panel.properties"
@@ -29,6 +30,11 @@ export type MessageKey =
   | "target.empty"
   | "tree.nodes"
   | "tree.empty"
+  | "tree.searchPlaceholder"
+  | "tree.searchResults"
+  | "tree.searchNoResults"
+  | "tree.previousMatch"
+  | "tree.nextMatch"
   | "properties.selected"
   | "properties.attributes"
   | "properties.accessibility"
@@ -97,6 +103,7 @@ export const messages: Record<"zh-CN" | "en-US", Record<MessageKey, string>> = {
     "toolbar.density": "密度",
     "toolbar.ipcReady": "IPC 已就绪",
     "toolbar.ipcError": "IPC 异常",
+    "toolbar.pickElement": "点选",
     "panel.targets": "目标",
     "panel.explorer": "结构",
     "panel.properties": "属性",
@@ -117,6 +124,11 @@ export const messages: Record<"zh-CN" | "en-US", Record<MessageKey, string>> = {
     "target.empty": "连接后会显示 Chrome/Edge 可检查页面。",
     "tree.nodes": "节点",
     "tree.empty": "连接页面后会显示 DOM 树。",
+    "tree.searchPlaceholder": "搜索节点",
+    "tree.searchResults": "搜索",
+    "tree.searchNoResults": "0",
+    "tree.previousMatch": "上一个匹配",
+    "tree.nextMatch": "下一个匹配",
     "properties.selected": "选中元素",
     "properties.attributes": "DOM 属性",
     "properties.accessibility": "可访问性",
@@ -184,6 +196,7 @@ export const messages: Record<"zh-CN" | "en-US", Record<MessageKey, string>> = {
     "toolbar.density": "Density",
     "toolbar.ipcReady": "IPC ready",
     "toolbar.ipcError": "IPC error",
+    "toolbar.pickElement": "Pick",
     "panel.targets": "Targets",
     "panel.explorer": "Structure",
     "panel.properties": "Properties",
@@ -204,6 +217,11 @@ export const messages: Record<"zh-CN" | "en-US", Record<MessageKey, string>> = {
     "target.empty": "Inspectable Chrome/Edge pages appear after connecting.",
     "tree.nodes": "Nodes",
     "tree.empty": "Connect a page to render the DOM tree.",
+    "tree.searchPlaceholder": "Search nodes",
+    "tree.searchResults": "Search",
+    "tree.searchNoResults": "0",
+    "tree.previousMatch": "Previous match",
+    "tree.nextMatch": "Next match",
     "properties.selected": "Selected element",
     "properties.attributes": "DOM attributes",
     "properties.accessibility": "Accessibility",

@@ -12,7 +12,9 @@ const IPC_CHANNELS = {
   selectBrowserTarget: "browser:select-target",
   getDomSnapshot: "browser:get-dom-snapshot",
   highlightElement: "browser:highlight-element",
-  highlightElements: "browser:highlight-elements"
+  highlightElements: "browser:highlight-elements",
+  setElementPickerEnabled: "browser:set-element-picker-enabled",
+  getPickedElementId: "browser:get-picked-element-id"
 } as const;
 
 const api: IpcApi = {
@@ -25,7 +27,9 @@ const api: IpcApi = {
   selectBrowserTarget: (targetId) => ipcRenderer.invoke(IPC_CHANNELS.selectBrowserTarget, targetId),
   getDomSnapshot: () => ipcRenderer.invoke(IPC_CHANNELS.getDomSnapshot),
   highlightElement: (elementId) => ipcRenderer.invoke(IPC_CHANNELS.highlightElement, elementId),
-  highlightElements: (elementIds) => ipcRenderer.invoke(IPC_CHANNELS.highlightElements, elementIds)
+  highlightElements: (elementIds) => ipcRenderer.invoke(IPC_CHANNELS.highlightElements, elementIds),
+  setElementPickerEnabled: (enabled) => ipcRenderer.invoke(IPC_CHANNELS.setElementPickerEnabled, enabled),
+  getPickedElementId: () => ipcRenderer.invoke(IPC_CHANNELS.getPickedElementId)
 };
 
 contextBridge.exposeInMainWorld("uiExplorer", api);

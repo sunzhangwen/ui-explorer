@@ -228,6 +228,14 @@ export class BrowserSession {
     await this.evaluate(HIGHLIGHT_SCRIPT.replace("__ELEMENT_IDS__", JSON.stringify(elementIds)));
   }
 
+  async setElementPickerEnabled(enabled: boolean): Promise<void> {
+    await this.evaluate(ELEMENT_PICKER_SCRIPT.replace("__ENABLED__", JSON.stringify(enabled)));
+  }
+
+  async getPickedElementId(): Promise<string | null> {
+    return this.evaluate<string | null>(GET_PICKED_ELEMENT_SCRIPT);
+  }
+
   private async fetchTargets(): Promise<BrowserTarget[]> {
     if (!this.endpoint) {
       return [];
@@ -327,6 +335,7 @@ function collectRawTargetTypes(rawTargets: unknown): string[] {
 
 const SNAPSHOT_SCRIPT = `(() => {
   const registry = new Map();
+  const elementIds = new WeakMap();
   let sequence = 0;
   const readAttributes = (element) => {
     const attributes = {};
@@ -365,6 +374,7 @@ const SNAPSHOT_SCRIPT = `(() => {
   const walk = (node, depth, parentId) => {
     const id = "n-" + (++sequence);
     registry.set(id, node);
+    elementIds.set(node, id);
     const children = [];
     const base = {
       id,
@@ -396,6 +406,8 @@ const SNAPSHOT_SCRIPT = `(() => {
   };
   const root = document.documentElement ? walk(document.documentElement, 0, undefined) : null;
   window.__uiExplorerElements = registry;
+  window.__uiExplorerElementIds = elementIds;
+  window.__uiExplorerPickedElementId = null;
   return { root, capturedAt: new Date().toISOString(), nodeCount: sequence };
 })()`;
 
@@ -444,4 +456,73 @@ const HIGHLIGHT_SCRIPT = `(() => {
     doc.documentElement.appendChild(overlay);
   });
   return true;
+})()`;
+
+const ELEMENT_PICKER_SCRIPT = `(() => {
+  const enabled = __ENABLED__;
+  const state = window.__uiExplorerPicker || { listeners: [] };
+  for (const entry of state.listeners || []) {
+    entry.document.removeEventListener("click", entry.listener, true);
+  }
+  state.listeners = [];
+  window.__uiExplorerPicker = state;
+
+  if (!enabled) {
+    return true;
+  }
+
+  const findElementId = (event) => {
+    const ids = window.__uiExplorerElementIds;
+    if (!ids) {
+      return null;
+    }
+    const path = typeof event.composedPath === "function" ? event.composedPath() : [event.target];
+    for (const node of path) {
+      if (!(node instanceof Element)) {
+        continue;
+      }
+      if (node.closest?.("[data-ui-explorer-highlight]")) {
+        continue;
+      }
+      const id = ids.get(node);
+      if (id) {
+        return id;
+      }
+    }
+    return null;
+  };
+
+  const install = (doc) => {
+    const listener = (event) => {
+      const id = findElementId(event);
+      if (!id) {
+        return;
+      }
+      window.__uiExplorerPickedElementId = id;
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation?.();
+    };
+    doc.addEventListener("click", listener, true);
+    state.listeners.push({ document: doc, listener });
+
+    for (const frame of Array.from(doc.querySelectorAll("iframe"))) {
+      try {
+        if (frame.contentDocument) {
+          install(frame.contentDocument);
+        }
+      } catch {
+        // Cross-origin frames cannot be instrumented from the target page.
+      }
+    }
+  };
+
+  install(document);
+  return true;
+})()`;
+
+const GET_PICKED_ELEMENT_SCRIPT = `(() => {
+  const id = window.__uiExplorerPickedElementId || null;
+  window.__uiExplorerPickedElementId = null;
+  return id;
 })()`;

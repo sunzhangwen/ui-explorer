@@ -61,6 +61,8 @@ type AppStore = {
   selectBrowserTarget: (targetId: string) => Promise<void>;
   selectElement: (elementId: string) => Promise<void>;
   highlightElements: (elementIds: string[]) => Promise<void>;
+  setElementPickerEnabled: (enabled: boolean) => Promise<void>;
+  getPickedElementId: () => Promise<string | null>;
   initialize: () => Promise<void>;
 };
 
@@ -182,6 +184,17 @@ export const useAppStore = create<AppStore>()(
           set({ browserConnection: { state: "error", endpoint, message } });
         }
       },
+      setElementPickerEnabled: async (enabled) => {
+        try {
+          await getApi().setElementPickerEnabled(enabled);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          const currentConnection = get().browserConnection;
+          const endpoint = currentConnection.state === "idle" ? "" : currentConnection.endpoint;
+          set({ browserConnection: { state: "error", endpoint, message } });
+        }
+      },
+      getPickedElementId: async () => getApi().getPickedElementId(),
       initialize: async () => {
         try {
           const api = getApi();
@@ -252,7 +265,9 @@ function getApi(): IpcApi {
     selectBrowserTarget: async () => emptySnapshot(),
     getDomSnapshot: async () => emptySnapshot(),
     highlightElement: async () => undefined,
-    highlightElements: async () => undefined
+    highlightElements: async () => undefined,
+    setElementPickerEnabled: async () => undefined,
+    getPickedElementId: async () => null
   };
 
   return window.uiExplorer ?? fallbackApi;

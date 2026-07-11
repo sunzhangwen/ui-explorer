@@ -79,6 +79,8 @@ export type IpcApi = {
   getDomSnapshot: () => Promise<DomSnapshotResult>;
   highlightElement: (elementId: string) => Promise<void>;
   highlightElements: (elementIds: string[]) => Promise<void>;
+  setElementPickerEnabled: (enabled: boolean) => Promise<void>;
+  getPickedElementId: () => Promise<string | null>;
 };
 
 export const TEST_PAGES: TestPage[] = [
@@ -130,5 +132,7 @@ export const IPC_CHANNELS = {
   selectBrowserTarget: "browser:select-target",
   getDomSnapshot: "browser:get-dom-snapshot",
   highlightElement: "browser:highlight-element",
-  highlightElements: "browser:highlight-elements"
+  highlightElements: "browser:highlight-elements",
+  setElementPickerEnabled: "browser:set-element-picker-enabled",
+  getPickedElementId: "browser:get-picked-element-id"
 } as const;

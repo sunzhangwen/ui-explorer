@@ -85,6 +85,7 @@ export type SelectorEdit =
 
 const HIGH_VALUE_ATTRIBUTES = ["data-testid", "data-test", "data-cy", "aria-label"] as const;
 const MEDIUM_VALUE_ATTRIBUTES = ["name", "placeholder", "title", "type"] as const;
+const TEXT_ATTRIBUTE_NAME = "text";
 
 export function generateSelectorCandidates(root: ElementSnapshot | null, targetId: string | null): SelectorCandidate[] {
   if (!root || !targetId) {
@@ -297,7 +298,13 @@ function matchesLayer(node: ElementSnapshot, layer: SelectorLayer): boolean {
 
   return layer.attributes
     .filter((attribute) => attribute.enabled)
-    .every((attribute) => node.attributes[attribute.name] === attribute.value);
+    .every((attribute) => {
+      if (attribute.name === TEXT_ATTRIBUTE_NAME) {
+        return normalizeText(node.text) === normalizeText(attribute.value);
+      }
+
+      return node.attributes[attribute.name] === attribute.value;
+    });
 }
 
 function scoreSelector(layers: SelectorLayer[], validation: SelectorValidation): SelectorScore {
@@ -355,6 +362,16 @@ function rankAttributes(node: ElementSnapshot): SelectorAttribute[] {
     });
   }
 
+  if (node.text?.trim()) {
+    attributes.push({
+      name: TEXT_ATTRIBUTE_NAME,
+      value: normalizeText(node.text),
+      enabled: false,
+      stable: true,
+      score: 34
+    });
+  }
+
   return attributes;
 }
 
@@ -366,17 +383,18 @@ function serializeSelector(type: SelectorType, layers: SelectorLayer[]): string 
   }
 
   if (type === "playwright") {
+    const text = getEnabledAttribute(targetLayer, TEXT_ATTRIBUTE_NAME);
     const testId = getEnabledAttribute(targetLayer, "data-testid") ?? getEnabledAttribute(targetLayer, "data-test") ?? getEnabledAttribute(targetLayer, "data-cy");
     if (testId) {
-      return `page.getByTestId(${quoteJs(testId)})`;
+      return withPlaywrightTextFilter(`page.getByTestId(${quoteJs(testId)})`, text);
     }
 
     const role = getEnabledAttribute(targetLayer, "role");
     if (role) {
-      return `page.getByRole(${quoteJs(role)}${targetLayer.tagName === "input" ? "" : `, { name: ${quoteJs("")} }`})`;
+      return `page.getByRole(${quoteJs(role)}${text && targetLayer.tagName !== "input" ? `, { name: ${quoteJs(text)} }` : ""})`;
     }
 
-    return `page.locator(${quoteJs(serializeSelector("css", layers))})`;
+    return withPlaywrightTextFilter(`page.locator(${quoteJs(serializeSelector("css", layers))})`, text);
   }
 
   if (type === "xpath") {
@@ -389,7 +407,7 @@ function serializeSelector(type: SelectorType, layers: SelectorLayer[]): string 
 function serializeCssLayer(layer: SelectorLayer): string {
   const tag = layer.tagEnabled ? layer.tagName : "";
   const attributes = layer.attributes
-    .filter((attribute) => attribute.enabled && attribute.name !== "role")
+    .filter((attribute) => attribute.enabled && attribute.name !== "role" && attribute.name !== TEXT_ATTRIBUTE_NAME)
     .map((attribute) => {
       if (attribute.name === "id" && attribute.stable) {
         return `#${cssEscape(attribute.value)}`;
@@ -402,12 +420,18 @@ function serializeCssLayer(layer: SelectorLayer): string {
 
 function serializeXPathLayer(layer: SelectorLayer): string {
   const tag = layer.tagEnabled ? layer.tagName : "*";
-  const attributes = layer.attributes.filter((attribute) => attribute.enabled && attribute.name !== "role");
-  if (attributes.length === 0) {
+  const predicates = layer.attributes
+    .filter((attribute) => attribute.enabled && attribute.name !== "role")
+    .map((attribute) =>
+      attribute.name === TEXT_ATTRIBUTE_NAME
+        ? `normalize-space(.)=${quoteXPath(attribute.value)}`
+        : `@${attribute.name}=${quoteXPath(attribute.value)}`
+    );
+  if (predicates.length === 0) {
     return tag;
   }
 
-  return `${tag}[${attributes.map((attribute) => `@${attribute.name}=${quoteXPath(attribute.value)}`).join(" and ")}]`;
+  return `${tag}[${predicates.join(" and ")}]`;
 }
 
 function getAncestorChain(root: ElementSnapshot, targetId: string): ElementSnapshot[] {
@@ -433,6 +457,14 @@ function getAncestorChain(root: ElementSnapshot, targetId: string): ElementSnaps
 
 function getEnabledAttribute(layer: SelectorLayer, name: string): string | null {
   return layer.attributes.find((attribute) => attribute.enabled && attribute.name === name)?.value ?? null;
+}
+
+function withPlaywrightTextFilter(locator: string, text: string | null): string {
+  return text ? `${locator}.filter({ hasText: ${quoteJs(text)} })` : locator;
+}
+
+function normalizeText(value: string | undefined): string {
+  return (value ?? "").replace(/\s+/g, " ").trim();
 }
 
 function isStableAttribute(name: string, value: string): boolean {

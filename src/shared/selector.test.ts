@@ -103,6 +103,35 @@ test("applySelectorEdit recalculates selector and validation when an attribute i
   assert.ok(edited.score.risks.some((risk) => risk.code === "not-unique"));
 });
 
+test("text layer attribute can make duplicate elements unique", () => {
+  const candidate = generateSelectorCandidates(snapshot, "primary").find((item) => item.type === "playwright");
+  assert.ok(candidate);
+
+  const edited = applySelectorEdit(snapshot, candidate, {
+    layerId: "target",
+    attributeName: "text",
+    enabled: true
+  });
+
+  assert.equal(edited.validation.status, "unique");
+  assert.equal(edited.validation.matchCount, 1);
+  assert.match(edited.selector, /hasText: "Save account"/);
+});
+
+test("xpath selector serializes enabled text attribute", () => {
+  const candidate = generateSelectorCandidates(snapshot, "primary").find((item) => item.type === "xpath");
+  assert.ok(candidate);
+
+  const edited = applySelectorEdit(snapshot, candidate, {
+    layerId: "target",
+    attributeName: "text",
+    enabled: true
+  });
+
+  assert.equal(edited.validation.status, "unique");
+  assert.match(edited.selector, /normalize-space\(\.\)='Save account'/);
+});
+
 test("buildSelectorExports creates JSON, Playwright, and Selenium snippets", () => {
   const candidate = generateSelectorCandidates(snapshot, "unstable").find((item) => item.type === "css");
   assert.ok(candidate);

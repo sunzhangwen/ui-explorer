@@ -14,16 +14,18 @@ import {
   Gauge,
   Globe2,
   Languages,
+  MousePointer2,
   Moon,
   PanelLeft,
   PanelRight,
   PlugZap,
   RefreshCw,
+  Search,
   SlidersHorizontal,
   Sun,
   Waypoints
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { PointerEvent, ReactNode } from "react";
 import { findElementSnapshot, flattenElementSnapshot, formatElementAttributes } from "../../shared/domSnapshot";
 import type { ElementSnapshot } from "../../shared/ipc";
@@ -40,6 +42,7 @@ import { useAppStore } from "../store/useAppStore";
 
 type ResizeSide = "left" | "right";
 type ExportFormat = keyof SelectorExports;
+type LeftPanelSectionId = "targets" | "current" | "tests";
 const TREE_ROW_HEIGHT = 30;
 const TREE_OVERSCAN = 12;
 
@@ -60,6 +63,7 @@ export function WorkbenchLayout(): JSX.Element {
     selectBrowserTarget,
     selectElement,
     highlightElements,
+    getPickedElementId,
     rightPanelSections,
     selectedBrowserTargetId,
     selectedElementId,
@@ -67,6 +71,7 @@ export function WorkbenchLayout(): JSX.Element {
     setDensity,
     setLocale,
     setPanelSize,
+    setElementPickerEnabled,
     setTheme,
     testPages,
     toggleRightPanelSection,
@@ -78,6 +83,14 @@ export function WorkbenchLayout(): JSX.Element {
   const [debugEndpoint, setDebugEndpoint] = useState("localhost:9222");
   const [treeScrollTop, setTreeScrollTop] = useState(0);
   const [collapsedNodeIds, setCollapsedNodeIds] = useState<Set<string>>(() => new Set());
+  const [treeSearchQuery, setTreeSearchQuery] = useState("");
+  const [currentSearchMatchIndex, setCurrentSearchMatchIndex] = useState(0);
+  const [isElementPickerEnabled, setIsElementPickerEnabled] = useState(false);
+  const [leftPanelSections, setLeftPanelSections] = useState<Record<LeftPanelSectionId, boolean>>({
+    targets: true,
+    current: true,
+    tests: true
+  });
   const [selectedCandidateId, setSelectedCandidateId] = useState<string | null>(null);
   const [selectorDrafts, setSelectorDrafts] = useState<Record<string, SelectorCandidate>>({});
   const [exportFormat, setExportFormat] = useState<ExportFormat>("json");
@@ -87,6 +100,11 @@ export function WorkbenchLayout(): JSX.Element {
     [selectedTestPageId, testPages]
   );
   const treeRows = useMemo(() => flattenElementSnapshot(domSnapshot?.root ?? null), [domSnapshot]);
+  const treeSearchMatches = useMemo(
+    () => findTreeSearchMatches(treeRows, treeSearchQuery),
+    [treeRows, treeSearchQuery]
+  );
+  const activeSearchMatch = treeSearchMatches[currentSearchMatchIndex] ?? null;
   const visibleTreeRows = useMemo(
     () => flattenVisibleElementSnapshot(domSnapshot?.root ?? null, collapsedNodeIds),
     [domSnapshot?.root, collapsedNodeIds]
@@ -111,6 +129,30 @@ export function WorkbenchLayout(): JSX.Element {
   const selectorExports = useMemo(() => (selectedCandidate ? buildSelectorExports(selectedCandidate) : null), [selectedCandidate]);
   const previewSnippet = selectorExports?.[exportFormat] ?? "";
 
+  const revealElement = (elementId: string) => {
+    if (!domSnapshot?.root) {
+      void selectElement(elementId);
+      return;
+    }
+
+    setCollapsedNodeIds((current) => {
+      const next = new Set(current);
+      for (const ancestorId of getAncestorIds(treeRows, elementId)) {
+        next.delete(ancestorId);
+      }
+
+      const nextRows = flattenVisibleElementSnapshot(domSnapshot.root, next);
+      const rowIndex = nextRows.findIndex((row) => row.id === elementId);
+      if (rowIndex >= 0) {
+        setTreeScrollTop(Math.max(0, (rowIndex - 8) * TREE_ROW_HEIGHT));
+      }
+
+      return next;
+    });
+
+    void selectElement(elementId);
+  };
+
   useEffect(() => {
     setSelectedCandidateId(selectorCandidates[0]?.id ?? null);
     setSelectorDrafts({});
@@ -121,6 +163,54 @@ export function WorkbenchLayout(): JSX.Element {
     setCollapsedNodeIds(new Set());
     setTreeScrollTop(0);
   }, [domSnapshot?.capturedAt]);
+
+  useEffect(() => {
+    setCurrentSearchMatchIndex(0);
+  }, [domSnapshot?.capturedAt, treeSearchQuery]);
+
+  useEffect(() => {
+    if (!activeSearchMatch) {
+      return;
+    }
+
+    revealElement(activeSearchMatch.id);
+  }, [activeSearchMatch?.id]);
+
+  useEffect(() => {
+    if (browserConnection.state !== "connected" && isElementPickerEnabled) {
+      setIsElementPickerEnabled(false);
+    }
+  }, [browserConnection.state, isElementPickerEnabled]);
+
+  useEffect(() => {
+    if (browserConnection.state !== "connected") {
+      return;
+    }
+
+    void setElementPickerEnabled(isElementPickerEnabled);
+    return () => {
+      void setElementPickerEnabled(false);
+    };
+  }, [browserConnection.state, domSnapshot?.capturedAt, isElementPickerEnabled, setElementPickerEnabled]);
+
+  useEffect(() => {
+    if (!isElementPickerEnabled || browserConnection.state !== "connected") {
+      return;
+    }
+
+    const pollPickedElement = () => {
+      void getPickedElementId()
+        .then((elementId) => {
+          if (elementId) {
+            revealElement(elementId);
+          }
+        })
+        .catch(() => undefined);
+    };
+
+    const intervalId = window.setInterval(pollPickedElement, 250);
+    return () => window.clearInterval(intervalId);
+  }, [browserConnection.state, domSnapshot?.capturedAt, getPickedElementId, isElementPickerEnabled]);
 
   useEffect(() => {
     if (!selectedCandidate || browserConnection.state !== "connected") {
@@ -145,6 +235,29 @@ export function WorkbenchLayout(): JSX.Element {
       }
       return next;
     });
+  };
+
+  const showPreviousSearchMatch = () => {
+    if (treeSearchMatches.length === 0) {
+      return;
+    }
+
+    setCurrentSearchMatchIndex((current) => (current - 1 + treeSearchMatches.length) % treeSearchMatches.length);
+  };
+
+  const showNextSearchMatch = () => {
+    if (treeSearchMatches.length === 0) {
+      return;
+    }
+
+    setCurrentSearchMatchIndex((current) => (current + 1) % treeSearchMatches.length);
+  };
+
+  const toggleLeftPanelSection = (section: LeftPanelSectionId) => {
+    setLeftPanelSections((current) => ({
+      ...current,
+      [section]: !current[section]
+    }));
   };
 
   const copyExport = () => {
@@ -200,6 +313,8 @@ export function WorkbenchLayout(): JSX.Element {
     ? `${selectedCandidate.validation.matchCount} ${t("selector.matchCount")} / ${selectedCandidate.score.total}`
     : "-";
   const exportSummary = selectedCandidate ? t(`selector.export.${exportFormat}`) : "-";
+  const selectedTargetSummary = selectedTarget?.title || selectedTarget?.url || "-";
+  const selectedTestSummary = selectedPage ? t(selectedPage.titleKey) : "-";
 
   return (
     <div className="app-shell" data-density={density}>
@@ -255,43 +370,64 @@ export function WorkbenchLayout(): JSX.Element {
         onPointerCancel={endResize}
       >
         <aside className="side-panel left-panel" style={{ width: panelSizes.left }}>
-          <PanelTitle icon={<PanelLeft size={15} />} title={t("panel.targets")} />
-          <section className="connection-card">
-            <span>{t("connection.status")}</span>
-            <strong>{connectionLabel}</strong>
-            <p>{connectionHint}</p>
-          </section>
+          <CollapsibleSection
+            icon={<PanelLeft size={15} />}
+            open={leftPanelSections.targets}
+            summary={connectionLabel}
+            title={t("panel.targets")}
+            onToggle={() => toggleLeftPanelSection("targets")}
+          >
+            <section className="connection-card">
+              <span>{t("connection.status")}</span>
+              <strong>{connectionLabel}</strong>
+              <p>{connectionHint}</p>
+            </section>
+          </CollapsibleSection>
 
-          <PanelTitle icon={<Globe2 size={15} />} title={t("target.current")} />
-          <div className="target-list">
-            {browserTargets.length === 0 ? <p className="empty-copy">{t("target.empty")}</p> : null}
-            {browserTargets.map((target) => (
-              <button
-                type="button"
-                className={target.id === selectedBrowserTargetId ? "target-page selected" : "target-page"}
-                key={target.id}
-                onClick={() => void selectBrowserTarget(target.id)}
-              >
-                <span>{target.title || target.url}</span>
-                <small>{target.url}</small>
-              </button>
-            ))}
-          </div>
+          <CollapsibleSection
+            icon={<Globe2 size={15} />}
+            open={leftPanelSections.current}
+            summary={selectedTargetSummary}
+            title={t("target.current")}
+            onToggle={() => toggleLeftPanelSection("current")}
+          >
+            <div className="target-list">
+              {browserTargets.length === 0 ? <p className="empty-copy">{t("target.empty")}</p> : null}
+              {browserTargets.map((target) => (
+                <button
+                  type="button"
+                  className={target.id === selectedBrowserTargetId ? "target-page selected" : "target-page"}
+                  key={target.id}
+                  onClick={() => void selectBrowserTarget(target.id)}
+                >
+                  <span>{target.title || target.url}</span>
+                  <small>{target.url}</small>
+                </button>
+              ))}
+            </div>
+          </CollapsibleSection>
 
-          <PanelTitle icon={<Database size={15} />} title={t("panel.tests")} />
-          <div className="test-list">
-            {testPages.map((page) => (
-              <button
-                type="button"
-                className={page.id === selectedPage?.id ? "test-page selected" : "test-page"}
-                key={page.id}
-                onClick={() => selectTestPage(page.id)}
-              >
-                <span>{t(page.titleKey)}</span>
-                <small>{t(page.descriptionKey)}</small>
-              </button>
-            ))}
-          </div>
+          <CollapsibleSection
+            icon={<Database size={15} />}
+            open={leftPanelSections.tests}
+            summary={selectedTestSummary}
+            title={t("panel.tests")}
+            onToggle={() => toggleLeftPanelSection("tests")}
+          >
+            <div className="test-list">
+              {testPages.map((page) => (
+                <button
+                  type="button"
+                  className={page.id === selectedPage?.id ? "test-page selected" : "test-page"}
+                  key={page.id}
+                  onClick={() => selectTestPage(page.id)}
+                >
+                  <span>{t(page.titleKey)}</span>
+                  <small>{t(page.descriptionKey)}</small>
+                </button>
+              ))}
+            </div>
+          </CollapsibleSection>
         </aside>
 
         <div className="resize-handle" role="separator" aria-orientation="vertical" onPointerDown={beginResize("left")} />
@@ -300,6 +436,15 @@ export function WorkbenchLayout(): JSX.Element {
           <div className="panel-strip">
             <PanelTitle icon={<Columns3 size={15} />} title={t("panel.explorer")} />
             <div className="strip-actions">
+              <button
+                type="button"
+                className={isElementPickerEnabled ? "selected" : ""}
+                onClick={() => setIsElementPickerEnabled((current) => !current)}
+                disabled={browserConnection.state !== "connected"}
+              >
+                <MousePointer2 size={13} />
+                {t("toolbar.pickElement")}
+              </button>
               <button type="button" onClick={() => void refreshDomSnapshot()} disabled={browserConnection.state !== "connected"}>
                 <RefreshCw size={13} />
                 {t("toolbar.refresh")}
@@ -318,11 +463,44 @@ export function WorkbenchLayout(): JSX.Element {
                   {treeRows.length} {t("tree.nodes")}
                 </span>
               </div>
+              <div className="tree-search">
+                <Search size={14} />
+                <input
+                  value={treeSearchQuery}
+                  placeholder={t("tree.searchPlaceholder")}
+                  onChange={(event) => setTreeSearchQuery(event.target.value)}
+                />
+                <span>
+                  {treeSearchQuery.trim()
+                    ? treeSearchMatches.length > 0
+                      ? `${currentSearchMatchIndex + 1}/${treeSearchMatches.length}`
+                      : t("tree.searchNoResults")
+                    : t("tree.searchResults")}
+                </span>
+                <button
+                  type="button"
+                  className="previous"
+                  aria-label={t("tree.previousMatch")}
+                  disabled={treeSearchMatches.length < 2}
+                  onClick={showPreviousSearchMatch}
+                >
+                  <ChevronDown size={13} />
+                </button>
+                <button
+                  type="button"
+                  aria-label={t("tree.nextMatch")}
+                  disabled={treeSearchMatches.length < 2}
+                  onClick={showNextSearchMatch}
+                >
+                  <ChevronDown size={13} />
+                </button>
+              </div>
               {treeRows.length === 0 ? (
                 <p className="empty-copy">{t("tree.empty")}</p>
               ) : (
                 <VirtualTree
                   collapsedNodeIds={collapsedNodeIds}
+                  searchMatchIds={new Set(treeSearchMatches.map((match) => match.id))}
                   rows={visibleTreeRows}
                   selectedElementId={selectedElementId}
                   scrollTop={treeScrollTop}
@@ -407,6 +585,7 @@ export function WorkbenchLayout(): JSX.Element {
               selectedCandidate={selectedCandidate}
               selectedCandidateId={activeCandidateId}
               drafts={selectorDrafts}
+              root={domSnapshot?.root ?? null}
               onSelectCandidate={setSelectedCandidateId}
               onEdit={editSelector}
             />
@@ -511,6 +690,7 @@ function SelectorPanel({
   drafts,
   onEdit,
   onSelectCandidate,
+  root,
   selectedCandidate,
   selectedCandidateId
 }: {
@@ -518,6 +698,7 @@ function SelectorPanel({
   drafts: Record<string, SelectorCandidate>;
   onEdit: (candidate: SelectorCandidate, edit: SelectorEdit) => void;
   onSelectCandidate: (id: string) => void;
+  root: ElementSnapshot | null;
   selectedCandidate: SelectorCandidate | null;
   selectedCandidateId: string | null;
 }): JSX.Element {
@@ -561,55 +742,64 @@ function SelectorPanel({
 
       <section className="property-card selector-card">
         <h3>{t("selector.layers")}</h3>
-        {selectedCandidate.layers.map((layer) => (
-          <div className="selector-layer" key={layer.id}>
-            <label>
-              <input
-                type="checkbox"
-                checked={layer.enabled}
-                onChange={(event) => onEdit(selectedCandidate, { layerId: layer.id, enabled: event.currentTarget.checked })}
-              />
-              <SlidersHorizontal size={13} />
-              <span>{layer.kind === "target" ? t("selector.targetLayer") : t("selector.ancestorLayer")}</span>
-            </label>
-            <label>
-              <input
-                type="checkbox"
-                checked={layer.tagEnabled}
-                onChange={(event) => onEdit(selectedCandidate, { layerId: layer.id, tagEnabled: event.currentTarget.checked })}
-              />
-              <code>{layer.tagName}</code>
-            </label>
-            <div className="selector-attributes">
-              {layer.attributes.map((attribute) => (
-                <label key={attribute.name}>
-                  <input
-                    type="checkbox"
-                    checked={attribute.enabled}
-                    onChange={(event) =>
-                      onEdit(selectedCandidate, {
-                        layerId: layer.id,
-                        attributeName: attribute.name,
-                        enabled: event.currentTarget.checked
-                      })
-                    }
-                  />
-                  <span>{attribute.name}</span>
-                  <input
-                    value={attribute.value}
-                    onChange={(event) =>
-                      onEdit(selectedCandidate, {
-                        layerId: layer.id,
-                        attributeName: attribute.name,
-                        value: event.currentTarget.value
-                      })
-                    }
-                  />
-                </label>
-              ))}
+        {selectedCandidate.layers.map((layer) => {
+          const layerNode = findElementSnapshot(root, layer.nodeId);
+          return (
+            <div className="selector-layer" key={layer.id}>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={layer.enabled}
+                  onChange={(event) => onEdit(selectedCandidate, { layerId: layer.id, enabled: event.currentTarget.checked })}
+                />
+                <SlidersHorizontal size={13} />
+                <span>{layer.kind === "target" ? t("selector.targetLayer") : t("selector.ancestorLayer")}</span>
+              </label>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={layer.tagEnabled}
+                  onChange={(event) => onEdit(selectedCandidate, { layerId: layer.id, tagEnabled: event.currentTarget.checked })}
+                />
+                <code>{layer.tagName}</code>
+              </label>
+              {layer.kind === "target" ? (
+                <div className="selector-layer-text">
+                  <span>{t("properties.text")}</span>
+                  <strong>{layerNode?.text || "-"}</strong>
+                </div>
+              ) : null}
+              <div className="selector-attributes">
+                {layer.attributes.map((attribute) => (
+                  <label key={attribute.name}>
+                    <input
+                      type="checkbox"
+                      checked={attribute.enabled}
+                      onChange={(event) =>
+                        onEdit(selectedCandidate, {
+                          layerId: layer.id,
+                          attributeName: attribute.name,
+                          enabled: event.currentTarget.checked
+                        })
+                      }
+                    />
+                    <span>{attribute.name}</span>
+                    <input
+                      value={attribute.value}
+                      onChange={(event) =>
+                        onEdit(selectedCandidate, {
+                          layerId: layer.id,
+                          attributeName: attribute.name,
+                          value: event.currentTarget.value
+                        })
+                      }
+                    />
+                  </label>
+                ))}
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </section>
 
       <section className="property-card selector-card">
@@ -646,6 +836,51 @@ function Metric({ label, value }: { label: string; value: string }): JSX.Element
   );
 }
 
+function findTreeSearchMatches(rows: ElementSnapshot[], query: string): ElementSnapshot[] {
+  const normalizedQuery = query.trim().toLowerCase();
+  if (!normalizedQuery) {
+    return [];
+  }
+
+  return rows.filter((row) => getSearchText(row).includes(normalizedQuery));
+}
+
+function getSearchText(node: ElementSnapshot): string {
+  return [
+    node.nodeName,
+    node.tagName ?? "",
+    node.text ?? "",
+    node.role ?? "",
+    formatElementAttributes(node)
+  ]
+    .join(" ")
+    .toLowerCase();
+}
+
+function getAncestorIds(rows: ElementSnapshot[], elementId: string): string[] {
+  const byId = new Map(rows.map((row) => [row.id, row]));
+  const ancestorIds: string[] = [];
+  let current = byId.get(elementId);
+
+  while (current?.parentId) {
+    ancestorIds.push(current.parentId);
+    current = byId.get(current.parentId);
+  }
+
+  return ancestorIds;
+}
+
+function getTreeContentWidth(rows: ElementSnapshot[]): number {
+  const minimumWidth = 900;
+  const characterWidth = 7.4;
+  return rows.reduce((width, row) => {
+    const label = row.tagName ?? row.nodeName;
+    const attributes = formatElementAttributes(row);
+    const rowWidth = 72 + row.depth * 16 + (label.length + attributes.length) * characterWidth;
+    return Math.max(width, Math.ceil(rowWidth));
+  }, minimumWidth);
+}
+
 function flattenVisibleElementSnapshot(root: ElementSnapshot | null, collapsedNodeIds: Set<string>): ElementSnapshot[] {
   if (!root) {
     return [];
@@ -670,6 +905,7 @@ function VirtualTree({
   onSelect,
   onToggle,
   rows,
+  searchMatchIds,
   scrollTop,
   selectedElementId
 }: {
@@ -678,22 +914,38 @@ function VirtualTree({
   onSelect: (id: string) => void;
   onToggle: (id: string) => void;
   rows: ElementSnapshot[];
+  searchMatchIds: Set<string>;
   scrollTop: number;
   selectedElementId: string | null;
 }): JSX.Element {
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const startIndex = Math.max(0, Math.floor(scrollTop / TREE_ROW_HEIGHT) - TREE_OVERSCAN);
   const visibleCount = 90;
   const visibleRows = rows.slice(startIndex, startIndex + visibleCount);
+  const treeContentWidth = useMemo(() => getTreeContentWidth(rows), [rows]);
+
+  useEffect(() => {
+    const scrollContainer = scrollContainerRef.current;
+    if (!scrollContainer) {
+      return;
+    }
+
+    if (Math.abs(scrollContainer.scrollTop - scrollTop) > 1) {
+      scrollContainer.scrollTop = scrollTop;
+    }
+  }, [scrollTop]);
 
   return (
-    <div className="tree-list" onScroll={(event) => onScrollTopChange(event.currentTarget.scrollTop)}>
-      <div className="tree-spacer" style={{ height: rows.length * TREE_ROW_HEIGHT }}>
+    <div className="tree-list" ref={scrollContainerRef} onScroll={(event) => onScrollTopChange(event.currentTarget.scrollTop)}>
+      <div className="tree-spacer" style={{ height: rows.length * TREE_ROW_HEIGHT, width: treeContentWidth }}>
         {visibleRows.map((row, index) => {
           const hasChildren = row.children.length > 0;
           const isCollapsed = collapsedNodeIds.has(row.id);
+          const isSelected = row.id === selectedElementId;
+          const isSearchMatch = searchMatchIds.has(row.id);
           return (
             <div
-              className={row.id === selectedElementId ? "tree-row selected" : "tree-row"}
+              className={["tree-row", isSelected ? "selected" : "", isSearchMatch ? "search-match" : ""].filter(Boolean).join(" ")}
               key={row.id}
               style={{
                 paddingLeft: 6 + row.depth * 16,
