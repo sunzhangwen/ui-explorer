@@ -9,7 +9,7 @@
   <body>
     <main data-testid="iframe-page">
       <h1>iframe</h1>
-      <p class="muted">The child document contains controls that must keep frame path context.</p>
+      <p class="muted">The nested child documents contain controls that must keep their full frame path context.</p>
       <section>
         <h2>Host document</h2>
         <button type="button" data-testid="host-action">Host action</button>
@@ -17,7 +17,7 @@
       <iframe
         title="Payment frame"
         src="./iframe-child.html"
-        style="width: 100%; min-height: 320px; border: 1px solid #9daaa0; border-radius: 8px"
+        style="width: 100%; min-height: 480px; border: 1px solid #9daaa0; border-radius: 8px"
       ></iframe>
     </main>
   </body>
