@@ -138,6 +138,7 @@ git commit -m "feat: add snapshot context boundaries"
 - Modify: `src/main/browserSession.ts`
 - Modify: `tsconfig.test.json`
 - Modify: `public/test-pages/iframe.html`
+- Modify: `public/test-pages/iframe-child.html`
 - Create: `public/test-pages/iframe-nested.html`
 - Modify: `public/test-pages/shadow-dom.html`
 
