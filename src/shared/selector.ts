@@ -1,5 +1,5 @@
-import { findElementSnapshot, flattenElementSnapshot } from "./domSnapshot.js";
-import type { ElementSnapshot } from "./ipc.js";
+import { findElementSnapshot, flattenElementSnapshot, getElementPath } from "./domSnapshot.js";
+import type { ContextBoundary, ElementSnapshot } from "./ipc.js";
 
 export type SelectorType = "css" | "xpath" | "playwright";
 export type SelectorValidationStatus = "missing" | "unique" | "multiple";
@@ -22,7 +22,7 @@ export type SelectorAttribute = {
 export type SelectorLayer = {
   id: string;
   nodeId: string;
-  kind: "ancestor" | "target";
+  kind: "page" | "frame" | "shadow" | "ancestor" | "target";
   tagName: string;
   enabled: boolean;
   tagEnabled: boolean;
@@ -176,23 +176,105 @@ driver.find_element(By.CSS_SELECTOR, ${quotePython(cssSelector)}).click()
 }
 
 function buildTargetLayers(root: ElementSnapshot, target: ElementSnapshot): SelectorLayer[] {
-  const ancestors = getAncestorChain(root, target.id)
+  const path = getElementPath(root, target.id);
+  const hasContextMetadata =
+    target.context !== undefined ||
+    path.some((node) => node.kind === "page" || node.kind === "frame" || node.kind === "shadow");
+  if (!hasContextMetadata) {
+    return buildLegacyTargetLayers(path, target);
+  }
+
+  const page = path.find((node) => node.kind === "page");
+  const boundaries = path.filter((node) => node.kind === "frame" || node.kind === "shadow");
+  const ordinaryAncestors = path
+    .filter(
+      (node) =>
+        node.tagName &&
+        (node.kind ?? "element") === "element" &&
+        !["html", "body"].includes(node.tagName)
+    )
+    .slice(-2);
+  const ordinaryNodes = ordinaryAncestors.at(-1)?.id === target.id ? ordinaryAncestors : [...ordinaryAncestors, target];
+  const layers: SelectorLayer[] = [];
+
+  if (page) {
+    layers.push(createSelectorLayer(page, "page", "page", true, true));
+  }
+
+  const boundaryCounts = { frame: 0, shadow: 0 };
+  for (const boundaryNode of boundaries) {
+    const kind = boundaryNode.kind;
+    if (kind !== "frame" && kind !== "shadow") {
+      continue;
+    }
+
+    boundaryCounts[kind] += 1;
+    const boundary = boundaryNode.context?.at(-1);
+    const host = boundary ? findElementSnapshot(root, boundary.hostNodeId) : null;
+    if (!host?.tagName) {
+      continue;
+    }
+
+    layers.push(createSelectorLayer(host, kind, `${kind}-${boundaryCounts[kind]}`, true, true));
+  }
+
+  ordinaryNodes.forEach((node, index) => {
+    const isTarget = node.id === target.id;
+    layers.push(
+      createSelectorLayer(
+        node,
+        isTarget ? "target" : "ancestor",
+        isTarget ? "target" : `ancestor-${index + 1}`,
+        isTarget,
+        false
+      )
+    );
+  });
+
+  return layers;
+}
+
+function buildLegacyTargetLayers(path: ElementSnapshot[], target: ElementSnapshot): SelectorLayer[] {
+  const ancestors = path
+    .slice(0, -1)
     .filter((node) => node.tagName && node.tagName !== "html" && node.tagName !== "body")
     .slice(-2);
   const nodes = [...ancestors, target];
 
-  return nodes.map((node, index) => ({
-    id: index === nodes.length - 1 ? "target" : `ancestor-${index + 1}`,
+  return nodes.map((node, index) =>
+    createSelectorLayer(
+      node,
+      index === nodes.length - 1 ? "target" : "ancestor",
+      index === nodes.length - 1 ? "target" : `ancestor-${index + 1}`,
+      index === nodes.length - 1,
+      false
+    )
+  );
+}
+
+function createSelectorLayer(
+  node: ElementSnapshot,
+  kind: SelectorLayer["kind"],
+  id: string,
+  enabled: boolean,
+  stableAttributesOnly: boolean
+): SelectorLayer {
+  const attributes = rankAttributes(node).filter(
+    (attribute) => !stableAttributesOnly || (attribute.stable && attribute.name !== TEXT_ATTRIBUTE_NAME)
+  );
+
+  return {
+    id,
     nodeId: node.id,
-    kind: index === nodes.length - 1 ? "target" : "ancestor",
+    kind,
     tagName: node.tagName ?? node.nodeName.toLowerCase(),
-    enabled: index === nodes.length - 1,
+    enabled,
     tagEnabled: true,
-    attributes: rankAttributes(node).map((attribute, attributeIndex) => ({
+    attributes: attributes.map((attribute, attributeIndex) => ({
       ...attribute,
-      enabled: index === nodes.length - 1 && attributeIndex === 0
+      enabled: enabled && attributeIndex === 0
     }))
-  }));
+  };
 }
 
 function createCandidate(
@@ -265,6 +347,10 @@ function validateSelector(
 }
 
 function matchesActiveTargetLayer(root: ElementSnapshot | null, node: ElementSnapshot, layers: SelectorLayer[]): boolean {
+  if (layers.some((layer) => layer.kind === "page" || layer.kind === "frame" || layer.kind === "shadow")) {
+    return matchesContextAwareTarget(root, node, layers);
+  }
+
   const activeLayers = layers.filter((layer) => layer.enabled);
   const targetLayer = activeLayers.at(-1);
   if (!targetLayer || node.nodeType !== 1 || !node.tagName) {
@@ -289,6 +375,80 @@ function matchesActiveTargetLayer(root: ElementSnapshot | null, node: ElementSna
   }
 
   return cursor === activeAncestors.length;
+}
+
+function matchesContextAwareTarget(
+  root: ElementSnapshot | null,
+  node: ElementSnapshot,
+  layers: SelectorLayer[]
+): boolean {
+  if (!root || node.nodeType !== 1 || !node.tagName) {
+    return false;
+  }
+
+  const pageLayer = layers.find((layer) => layer.kind === "page");
+  if (pageLayer && (!pageLayer.enabled || !matchesLayer(root, pageLayer))) {
+    return false;
+  }
+
+  const boundaryLayers = layers.filter((layer) => layer.kind === "frame" || layer.kind === "shadow");
+  if (boundaryLayers.some((layer) => !layer.enabled)) {
+    return false;
+  }
+
+  const context = node.context ?? [];
+  if (
+    context.length !== boundaryLayers.length ||
+    !boundaryLayers.every((layer, index) => matchesContextBoundary(context[index], layer))
+  ) {
+    return false;
+  }
+
+  const targetLayer = layers.find((layer) => layer.kind === "target");
+  if (!targetLayer?.enabled || !matchesLayer(node, targetLayer)) {
+    return false;
+  }
+
+  const activeAncestors = layers.filter((layer) => layer.kind === "ancestor" && layer.enabled);
+  if (activeAncestors.length === 0) {
+    return true;
+  }
+
+  const nodeAncestors = getElementPath(root, node.id)
+    .slice(0, -1)
+    .filter((ancestor) => ancestor.tagName && contextSignaturesMatch(ancestor.context ?? [], context));
+  let cursor = 0;
+  for (const ancestor of nodeAncestors) {
+    if (cursor < activeAncestors.length && matchesLayer(ancestor, activeAncestors[cursor])) {
+      cursor += 1;
+    }
+  }
+
+  return cursor === activeAncestors.length;
+}
+
+function matchesContextBoundary(boundary: ContextBoundary | undefined, layer: SelectorLayer): boolean {
+  if (!boundary || boundary.kind !== layer.kind) {
+    return false;
+  }
+
+  if (layer.tagEnabled && boundary.hostTagName !== layer.tagName) {
+    return false;
+  }
+
+  return layer.attributes
+    .filter((attribute) => attribute.enabled)
+    .every((attribute) => boundary.hostAttributes[attribute.name] === attribute.value);
+}
+
+function contextSignaturesMatch(left: ContextBoundary[], right: ContextBoundary[]): boolean {
+  return (
+    left.length === right.length &&
+    left.every(
+      (boundary, index) =>
+        boundary.kind === right[index]?.kind && boundary.hostNodeId === right[index]?.hostNodeId
+    )
+  );
 }
 
 function matchesLayer(node: ElementSnapshot, layer: SelectorLayer): boolean {

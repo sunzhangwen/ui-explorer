@@ -65,6 +65,117 @@ const snapshot: ElementSnapshot = makeNode({
   ]
 });
 
+const frameBoundary = {
+  kind: "frame" as const,
+  hostNodeId: "payment-frame",
+  hostTagName: "iframe",
+  hostAttributes: { title: "Payment" }
+};
+
+const shadowBoundary = {
+  kind: "shadow" as const,
+  hostNodeId: "search-widget",
+  hostTagName: "search-widget",
+  hostAttributes: { "data-testid": "search-widget" }
+};
+
+const contextSnapshot: ElementSnapshot = makeNode({
+  id: "page",
+  nodeName: "HTML",
+  tagName: "html",
+  kind: "page",
+  attributes: { lang: "en" },
+  childIds: ["body"],
+  children: [
+    makeNode({
+      id: "body",
+      parentId: "page",
+      depth: 1,
+      nodeName: "BODY",
+      tagName: "body",
+      kind: "element",
+      childIds: ["payment-frame"],
+      children: [
+        makeNode({
+          id: "payment-frame",
+          parentId: "body",
+          depth: 2,
+          nodeName: "IFRAME",
+          tagName: "iframe",
+          kind: "element",
+          attributes: { title: "Payment" },
+          childIds: ["payment-frame-root"],
+          children: [
+            makeNode({
+              id: "payment-frame-root",
+              parentId: "payment-frame",
+              depth: 3,
+              nodeType: 9,
+              nodeName: "#document",
+              tagName: undefined,
+              kind: "frame",
+              context: [frameBoundary],
+              childIds: ["search-widget"],
+              children: [
+                makeNode({
+                  id: "search-widget",
+                  parentId: "payment-frame-root",
+                  depth: 4,
+                  nodeName: "SEARCH-WIDGET",
+                  tagName: "search-widget",
+                  kind: "element",
+                  context: [frameBoundary],
+                  attributes: { "data-testid": "search-widget" },
+                  childIds: ["search-shadow-root"],
+                  children: [
+                    makeNode({
+                      id: "search-shadow-root",
+                      parentId: "search-widget",
+                      depth: 5,
+                      nodeType: 11,
+                      nodeName: "#shadow-root",
+                      tagName: undefined,
+                      kind: "shadow",
+                      context: [frameBoundary, shadowBoundary],
+                      childIds: ["search-form"],
+                      children: [
+                        makeNode({
+                          id: "search-form",
+                          parentId: "search-shadow-root",
+                          depth: 6,
+                          nodeName: "FORM",
+                          tagName: "form",
+                          kind: "element",
+                          context: [frameBoundary, shadowBoundary],
+                          attributes: { "data-testid": "search-form" },
+                          childIds: ["shadow-input"],
+                          children: [
+                            makeNode({
+                              id: "shadow-input",
+                              parentId: "search-form",
+                              depth: 7,
+                              nodeName: "INPUT",
+                              tagName: "input",
+                              kind: "element",
+                              context: [frameBoundary, shadowBoundary],
+                              visible: true,
+                              attributes: { name: "query", type: "search" }
+                            })
+                          ]
+                        })
+                      ]
+                    })
+                  ]
+                })
+              ]
+            })
+          ]
+        })
+      ]
+    })
+  ]
+});
+
 test("generateSelectorCandidates creates CSS, XPath, and Playwright candidates with validation", () => {
   const candidates = generateSelectorCandidates(snapshot, "primary");
 
@@ -142,4 +253,22 @@ test("buildSelectorExports creates JSON, Playwright, and Selenium snippets", () 
   assert.match(exports.playwright, /const element = page\.locator\("input\[name=\\\"email\\\"\]"\);/);
   assert.match(exports.playwright, /await element\.click\(\);/);
   assert.match(exports.selenium, /driver\.find_element\(By\.CSS_SELECTOR, 'input\[name="email"\]'\)\.click\(\)/);
+});
+
+test("candidate layers preserve page frame shadow ancestor target order", () => {
+  const candidate = generateSelectorCandidates(contextSnapshot, "shadow-input")[0];
+
+  assert.deepEqual(candidate?.layers.map((layer) => layer.kind), ["page", "frame", "shadow", "ancestor", "target"]);
+});
+
+test("disabling a frame layer recalculates context validation", () => {
+  const candidate = generateSelectorCandidates(contextSnapshot, "shadow-input")[0];
+  assert.ok(candidate);
+  const frame = candidate.layers.find((layer) => layer.kind === "frame");
+  assert.ok(frame);
+
+  const edited = applySelectorEdit(contextSnapshot, candidate, { layerId: frame.id, enabled: false });
+
+  assert.equal(edited.layers.find((layer) => layer.id === frame.id)?.enabled, false);
+  assert.equal(edited.validation.targetConsistent, false);
 });
