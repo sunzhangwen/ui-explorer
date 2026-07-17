@@ -284,7 +284,10 @@ export const ELEMENT_PICKER_SCRIPT = `(() => {
     }
   };
 
-  install(document);
+  const documents = window.__uiExplorerDocuments || new Set([document]);
+  for (const doc of documents) {
+    install(doc);
+  }
   return true;
 })()`;
 

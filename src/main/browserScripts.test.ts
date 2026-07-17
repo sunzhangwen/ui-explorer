@@ -15,3 +15,9 @@ test("highlight and picker scripts visit accessible frame documents", () => {
   assert.match(ELEMENT_PICKER_SCRIPT, /contentDocument/);
   assert.match(ELEMENT_PICKER_SCRIPT, /composedPath/);
 });
+
+test("picker installs listeners in every captured document", () => {
+  assert.match(ELEMENT_PICKER_SCRIPT, /__uiExplorerDocuments/);
+  assert.match(ELEMENT_PICKER_SCRIPT, /for\s*\(const doc of documents\)/);
+  assert.match(ELEMENT_PICKER_SCRIPT, /install\(doc\)/);
+});
