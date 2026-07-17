@@ -585,7 +585,6 @@ export function WorkbenchLayout(): JSX.Element {
               selectedCandidate={selectedCandidate}
               selectedCandidateId={activeCandidateId}
               drafts={selectorDrafts}
-              root={domSnapshot?.root ?? null}
               onSelectCandidate={setSelectedCandidateId}
               onEdit={editSelector}
             />
@@ -690,7 +689,6 @@ function SelectorPanel({
   drafts,
   onEdit,
   onSelectCandidate,
-  root,
   selectedCandidate,
   selectedCandidateId
 }: {
@@ -698,7 +696,6 @@ function SelectorPanel({
   drafts: Record<string, SelectorCandidate>;
   onEdit: (candidate: SelectorCandidate, edit: SelectorEdit) => void;
   onSelectCandidate: (id: string) => void;
-  root: ElementSnapshot | null;
   selectedCandidate: SelectorCandidate | null;
   selectedCandidateId: string | null;
 }): JSX.Element {
@@ -742,64 +739,55 @@ function SelectorPanel({
 
       <section className="property-card selector-card">
         <h3>{t("selector.layers")}</h3>
-        {selectedCandidate.layers.map((layer) => {
-          const layerNode = findElementSnapshot(root, layer.nodeId);
-          return (
-            <div className="selector-layer" key={layer.id}>
-              <label>
-                <input
-                  type="checkbox"
-                  checked={layer.enabled}
-                  onChange={(event) => onEdit(selectedCandidate, { layerId: layer.id, enabled: event.currentTarget.checked })}
-                />
-                <SlidersHorizontal size={13} />
-                <span>{layer.kind === "target" ? t("selector.targetLayer") : t("selector.ancestorLayer")}</span>
-              </label>
-              <label>
-                <input
-                  type="checkbox"
-                  checked={layer.tagEnabled}
-                  onChange={(event) => onEdit(selectedCandidate, { layerId: layer.id, tagEnabled: event.currentTarget.checked })}
-                />
-                <code>{layer.tagName}</code>
-              </label>
-              {layer.kind === "target" ? (
-                <div className="selector-layer-text">
-                  <span>{t("properties.text")}</span>
-                  <strong>{layerNode?.text || "-"}</strong>
-                </div>
-              ) : null}
-              <div className="selector-attributes">
-                {layer.attributes.map((attribute) => (
-                  <label key={attribute.name}>
-                    <input
-                      type="checkbox"
-                      checked={attribute.enabled}
-                      onChange={(event) =>
-                        onEdit(selectedCandidate, {
-                          layerId: layer.id,
-                          attributeName: attribute.name,
-                          enabled: event.currentTarget.checked
-                        })
-                      }
-                    />
-                    <span>{attribute.name}</span>
-                    <input
-                      value={attribute.value}
-                      onChange={(event) =>
-                        onEdit(selectedCandidate, {
-                          layerId: layer.id,
-                          attributeName: attribute.name,
-                          value: event.currentTarget.value
-                        })
-                      }
-                    />
-                  </label>
-                ))}
-              </div>
+        {selectedCandidate.layers.map((layer) => (
+          <div className="selector-layer" key={layer.id}>
+            <label>
+              <input
+                type="checkbox"
+                checked={layer.enabled}
+                onChange={(event) => onEdit(selectedCandidate, { layerId: layer.id, enabled: event.currentTarget.checked })}
+              />
+              <SlidersHorizontal size={13} />
+              <span>{layer.kind === "target" ? t("selector.targetLayer") : t("selector.ancestorLayer")}</span>
+            </label>
+            <label>
+              <input
+                type="checkbox"
+                checked={layer.tagEnabled}
+                onChange={(event) => onEdit(selectedCandidate, { layerId: layer.id, tagEnabled: event.currentTarget.checked })}
+              />
+              <code>{layer.tagName}</code>
+            </label>
+            <div className="selector-attributes">
+              {layer.attributes.map((attribute) => (
+                <label key={attribute.name}>
+                  <input
+                    type="checkbox"
+                    checked={attribute.enabled}
+                    onChange={(event) =>
+                      onEdit(selectedCandidate, {
+                        layerId: layer.id,
+                        attributeName: attribute.name,
+                        enabled: event.currentTarget.checked
+                      })
+                    }
+                  />
+                  <span>{attribute.name}</span>
+                  <input
+                    value={attribute.value}
+                    onChange={(event) =>
+                      onEdit(selectedCandidate, {
+                        layerId: layer.id,
+                        attributeName: attribute.name,
+                        value: event.currentTarget.value
+                      })
+                    }
+                  />
+                </label>
+              ))}
             </div>
-          );
-        })}
+          </div>
+        ))}
       </section>
 
       <section className="property-card selector-card">

@@ -229,6 +229,17 @@ select {
   overflow: auto;
 }
 
+.right-panel .collapsible-section {
+  flex: 0 0 auto;
+}
+
+.right-panel .collapsible-body {
+  max-height: clamp(180px, 42vh, 520px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
 .left-panel {
   gap: 8px;
   overflow: auto;
@@ -800,21 +811,6 @@ select {
 .selector-layer code {
   color: rgb(var(--color-text));
   font-family: var(--font-mono);
-}
-
-.selector-layer-text {
-  display: grid;
-  grid-template-columns: 74px minmax(0, 1fr);
-  gap: 6px;
-  color: rgb(var(--color-muted));
-  font-size: var(--font-size-xs);
-}
-
-.selector-layer-text strong {
-  min-width: 0;
-  overflow-wrap: anywhere;
-  color: rgb(var(--color-text));
-  font-weight: 600;
 }
 
 .selector-attributes {
