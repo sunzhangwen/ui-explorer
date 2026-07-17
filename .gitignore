@@ -43,6 +43,7 @@ pnpm-debug.log*
 
 # Agents & tools
 .agents/
+.worktrees/
 
 # Project-specific
 REQUIREMENTS.md
