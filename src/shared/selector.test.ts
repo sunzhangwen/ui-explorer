@@ -79,6 +79,79 @@ const shadowBoundary = {
   hostAttributes: { "data-testid": "search-widget" }
 };
 
+const alternateFrameBoundary = {
+  ...frameBoundary,
+  hostNodeId: "alternate-frame"
+};
+
+const alternateShadowBoundary = {
+  ...shadowBoundary,
+  hostNodeId: "alternate-search-widget"
+};
+
+const alternateContextBranch = makeNode({
+  id: "alternate-frame",
+  parentId: "body",
+  depth: 2,
+  nodeName: "IFRAME",
+  tagName: "iframe",
+  kind: "element",
+  attributes: { title: "Payment" },
+  childIds: ["alternate-frame-root"],
+  children: [
+    makeNode({
+      id: "alternate-frame-root",
+      parentId: "alternate-frame",
+      depth: 3,
+      nodeType: 9,
+      nodeName: "#document",
+      tagName: undefined,
+      kind: "frame",
+      context: [alternateFrameBoundary],
+      childIds: ["alternate-search-widget"],
+      children: [
+        makeNode({
+          id: "alternate-search-widget",
+          parentId: "alternate-frame-root",
+          depth: 4,
+          nodeName: "SEARCH-WIDGET",
+          tagName: "search-widget",
+          kind: "element",
+          context: [alternateFrameBoundary],
+          attributes: { "data-testid": "search-widget" },
+          childIds: ["alternate-shadow-root"],
+          children: [
+            makeNode({
+              id: "alternate-shadow-root",
+              parentId: "alternate-search-widget",
+              depth: 5,
+              nodeType: 11,
+              nodeName: "#shadow-root",
+              tagName: undefined,
+              kind: "shadow",
+              context: [alternateFrameBoundary, alternateShadowBoundary],
+              childIds: ["alternate-input"],
+              children: [
+                makeNode({
+                  id: "alternate-input",
+                  parentId: "alternate-shadow-root",
+                  depth: 6,
+                  nodeName: "INPUT",
+                  tagName: "input",
+                  kind: "element",
+                  context: [alternateFrameBoundary, alternateShadowBoundary],
+                  visible: true,
+                  attributes: { name: "query", type: "search" }
+                })
+              ]
+            })
+          ]
+        })
+      ]
+    })
+  ]
+});
+
 const contextSnapshot: ElementSnapshot = makeNode({
   id: "page",
   nodeName: "HTML",
@@ -94,7 +167,7 @@ const contextSnapshot: ElementSnapshot = makeNode({
       nodeName: "BODY",
       tagName: "body",
       kind: "element",
-      childIds: ["payment-frame"],
+      childIds: ["payment-frame", "alternate-frame"],
       children: [
         makeNode({
           id: "payment-frame",
@@ -170,7 +243,8 @@ const contextSnapshot: ElementSnapshot = makeNode({
               ]
             })
           ]
-        })
+        }),
+        alternateContextBranch
       ]
     })
   ]
@@ -270,5 +344,33 @@ test("disabling a frame layer recalculates context validation", () => {
   const edited = applySelectorEdit(contextSnapshot, candidate, { layerId: frame.id, enabled: false });
 
   assert.equal(edited.layers.find((layer) => layer.id === frame.id)?.enabled, false);
+  assert.equal(edited.validation.targetConsistent, false);
+});
+
+test("context candidate initially validates as one consistent target", () => {
+  const candidate = generateSelectorCandidates(contextSnapshot, "shadow-input")[0];
+  assert.ok(candidate);
+
+  assert.equal(candidate.validation.status, "unique");
+  assert.equal(candidate.validation.matchCount, 1);
+  assert.equal(candidate.validation.targetConsistent, true);
+});
+
+test("context validation excludes a similar target under different boundary hosts", () => {
+  const candidate = generateSelectorCandidates(contextSnapshot, "shadow-input")[0];
+  assert.ok(candidate);
+
+  assert.deepEqual(candidate.validation.matchedElementIds, ["shadow-input"]);
+});
+
+test("disabling a shadow layer recalculates context validation", () => {
+  const candidate = generateSelectorCandidates(contextSnapshot, "shadow-input")[0];
+  assert.ok(candidate);
+  const shadow = candidate.layers.find((layer) => layer.kind === "shadow");
+  assert.ok(shadow);
+
+  const edited = applySelectorEdit(contextSnapshot, candidate, { layerId: shadow.id, enabled: false });
+
+  assert.equal(edited.layers.find((layer) => layer.id === shadow.id)?.enabled, false);
   assert.equal(edited.validation.targetConsistent, false);
 });

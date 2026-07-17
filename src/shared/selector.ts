@@ -428,7 +428,7 @@ function matchesContextAwareTarget(
 }
 
 function matchesContextBoundary(boundary: ContextBoundary | undefined, layer: SelectorLayer): boolean {
-  if (!boundary || boundary.kind !== layer.kind) {
+  if (!boundary || boundary.kind !== layer.kind || boundary.hostNodeId !== layer.nodeId) {
     return false;
   }
 
