@@ -4,6 +4,8 @@ import {
   findElementSnapshot,
   flattenElementSnapshot,
   formatElementAttributes,
+  getContextPath,
+  getElementPath,
   getElementSnapshotStats,
   normalizeDebugEndpoint
 } from "./domSnapshot.js";
@@ -70,6 +72,124 @@ const snapshot: ElementSnapshot = {
   ]
 };
 
+const contextSnapshot: ElementSnapshot = {
+  id: "page",
+  depth: 0,
+  nodeType: 1,
+  nodeName: "HTML",
+  tagName: "html",
+  kind: "page",
+  attributes: {},
+  childIds: ["body"],
+  children: [
+    {
+      id: "body",
+      parentId: "page",
+      depth: 1,
+      nodeType: 1,
+      nodeName: "BODY",
+      tagName: "body",
+      kind: "element",
+      attributes: {},
+      childIds: ["payment-frame", "unavailable-frame"],
+      children: [
+        {
+          id: "payment-frame",
+          parentId: "body",
+          depth: 2,
+          nodeType: 1,
+          nodeName: "IFRAME",
+          tagName: "iframe",
+          kind: "element",
+          attributes: { title: "Payment" },
+          childIds: ["payment-frame-root"],
+          children: [
+            {
+              id: "payment-frame-root",
+              parentId: "payment-frame",
+              depth: 3,
+              nodeType: 9,
+              nodeName: "#document",
+              kind: "frame",
+              attributes: {},
+              childIds: ["search-widget"],
+              children: [
+                {
+                  id: "search-widget",
+                  parentId: "payment-frame-root",
+                  depth: 4,
+                  nodeType: 1,
+                  nodeName: "SEARCH-WIDGET",
+                  tagName: "search-widget",
+                  kind: "element",
+                  attributes: {},
+                  childIds: ["search-shadow-root"],
+                  children: [
+                    {
+                      id: "search-shadow-root",
+                      parentId: "search-widget",
+                      depth: 5,
+                      nodeType: 11,
+                      nodeName: "#shadow-root",
+                      kind: "shadow",
+                      attributes: {},
+                      childIds: ["shadow-input"],
+                      children: [
+                        {
+                          id: "shadow-input",
+                          parentId: "search-shadow-root",
+                          depth: 6,
+                          nodeType: 1,
+                          nodeName: "INPUT",
+                          tagName: "input",
+                          kind: "element",
+                          context: [
+                            {
+                              kind: "frame",
+                              hostNodeId: "payment-frame",
+                              hostTagName: "iframe",
+                              hostAttributes: { title: "Payment" }
+                            },
+                            {
+                              kind: "shadow",
+                              hostNodeId: "search-widget",
+                              hostTagName: "search-widget",
+                              hostAttributes: {}
+                            }
+                          ],
+                          attributes: { type: "search" },
+                          childIds: [],
+                          children: []
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          id: "unavailable-frame",
+          parentId: "body",
+          depth: 2,
+          nodeType: 8,
+          nodeName: "#context-unavailable",
+          kind: "diagnostic",
+          diagnostic: {
+            code: "cross-origin-frame",
+            messageKey: "snapshot.crossOriginFrame",
+            detail: "Frame content is not accessible"
+          },
+          attributes: {},
+          childIds: [],
+          children: []
+        }
+      ]
+    }
+  ]
+};
+
 test("flattenElementSnapshot returns depth-first rows with inherited depth", () => {
   const rows = flattenElementSnapshot(snapshot);
 
@@ -90,6 +210,21 @@ test("findElementSnapshot returns nested nodes by id", () => {
   assert.equal(findElementSnapshot(snapshot, "missing"), null);
 });
 
+test("getElementPath returns the root-to-node path", () => {
+  assert.deepEqual(
+    getElementPath(snapshot, "button").map((node) => node.id),
+    ["root", "body", "button"]
+  );
+  assert.deepEqual(getElementPath(snapshot, "missing"), []);
+});
+
+test("getContextPath returns ordered frame and shadow boundaries", () => {
+  assert.deepEqual(
+    getContextPath(contextSnapshot, "shadow-input").map((boundary) => [boundary.kind, boundary.hostNodeId]),
+    [["frame", "payment-frame"], ["shadow", "search-widget"]]
+  );
+});
+
 test("formatElementAttributes preserves attribute order and values", () => {
   const button = findElementSnapshot(snapshot, "button");
 
@@ -100,7 +235,19 @@ test("getElementSnapshotStats counts elements and shadow roots", () => {
   assert.deepEqual(getElementSnapshotStats(snapshot), {
     totalNodes: 5,
     elementNodes: 4,
-    shadowRoots: 1
+    frameRoots: 0,
+    shadowRoots: 1,
+    inaccessibleContexts: 0
+  });
+});
+
+test("snapshot stats count frame, shadow, and inaccessible boundaries", () => {
+  assert.deepEqual(getElementSnapshotStats(contextSnapshot), {
+    totalNodes: 8,
+    elementNodes: 5,
+    frameRoots: 1,
+    shadowRoots: 1,
+    inaccessibleContexts: 1
   });
 });
 

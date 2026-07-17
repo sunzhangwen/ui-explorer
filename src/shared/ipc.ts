@@ -30,6 +30,23 @@ export type BoundingBox = {
   height: number;
 };
 
+export type ElementNodeKind = "element" | "page" | "frame" | "shadow" | "diagnostic";
+export type ContextBoundaryKind = "frame" | "shadow";
+export type SnapshotDiagnosticCode = "cross-origin-frame" | "closed-shadow-root" | "detached-context";
+
+export type ContextBoundary = {
+  kind: ContextBoundaryKind;
+  hostNodeId: string;
+  hostTagName: string;
+  hostAttributes: Record<string, string>;
+};
+
+export type SnapshotDiagnostic = {
+  code: SnapshotDiagnosticCode;
+  messageKey: string;
+  detail: string;
+};
+
 export type ElementSnapshot = {
   id: string;
   parentId?: string;
@@ -42,6 +59,9 @@ export type ElementSnapshot = {
   role?: string;
   visible?: boolean;
   boundingBox?: BoundingBox;
+  kind?: ElementNodeKind;
+  context?: ContextBoundary[];
+  diagnostic?: SnapshotDiagnostic;
   attributes: Record<string, string>;
   childIds: string[];
   children: ElementSnapshot[];
