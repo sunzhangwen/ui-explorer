@@ -329,6 +329,114 @@ test("buildSelectorExports creates JSON, Playwright, and Selenium snippets", () 
   assert.match(exports.selenium, /driver\.find_element\(By\.CSS_SELECTOR, 'input\[name="email"\]'\)\.click\(\)/);
 });
 
+test("Playwright export enters nested frames before locating shadow content", () => {
+  const candidate = generateSelectorCandidates(contextSnapshot, "shadow-input").find(
+    (item) => item.type === "playwright"
+  );
+  assert.ok(candidate);
+
+  const output = buildSelectorExports(candidate).playwright;
+
+  assert.match(output, /page\.frameLocator\('\[title="Payment"\]'\)/);
+  assert.match(output, /Open Shadow DOM: \[data-testid="search-widget"\]/);
+  assert.ok(output.indexOf("frameLocator") < output.indexOf('locator("input[name=\\\"query\\\"]")'));
+});
+
+test("Playwright export falls back from XPath inside open shadow roots", () => {
+  const candidate = generateSelectorCandidates(contextSnapshot, "shadow-input").find(
+    (item) => item.type === "xpath"
+  );
+  assert.ok(candidate);
+
+  const output = buildSelectorExports(candidate).playwright;
+
+  assert.match(output, /page\.frameLocator/);
+  assert.match(output, /locator\("input\[name=\\"query\\"\]"\)/);
+  assert.doesNotMatch(output, /locator\("\/\//);
+});
+
+test("Selenium export enters frames and shadow roots in order", () => {
+  const candidate = generateSelectorCandidates(contextSnapshot, "shadow-input").find(
+    (item) => item.type === "css"
+  );
+  assert.ok(candidate);
+
+  const output = buildSelectorExports(candidate).selenium;
+
+  assert.match(output, /driver\.switch_to\.frame/);
+  assert.match(output, /shadow_root = .*\.shadow_root/);
+  assert.match(output, /shadow_root\.find_element/);
+  assert.ok(output.indexOf("switch_to.frame") < output.indexOf("shadow_root ="));
+});
+
+test("JSON export includes ordered context chains and layer diagnostics", () => {
+  const candidate = generateSelectorCandidates(contextSnapshot, "shadow-input").find(
+    (item) => item.type === "css"
+  );
+  assert.ok(candidate);
+
+  const output = JSON.parse(buildSelectorExports(candidate).json) as {
+    context: { frameChain: string[]; shadowChain: string[] };
+    diagnostics: { validation: unknown[]; layers: unknown[] };
+  };
+
+  assert.deepEqual(output.context.frameChain, ['[title="Payment"]']);
+  assert.deepEqual(output.context.shadowChain, ['[data-testid="search-widget"]']);
+  assert.deepEqual(output.diagnostics.validation, []);
+  assert.deepEqual(output.diagnostics.layers, []);
+});
+
+test("inaccessible context diagnostics emit comments instead of runnable exports", () => {
+  const candidate = generateSelectorCandidates(contextSnapshot, "shadow-input").find(
+    (item) => item.type === "css"
+  );
+  assert.ok(candidate);
+  const blockedCandidate = {
+    ...candidate,
+    layers: candidate.layers.map((layer) =>
+      layer.kind === "frame"
+        ? {
+            ...layer,
+            diagnostic: {
+              code: "cross-origin-frame" as const,
+              messageKey: "snapshot.diagnostic.crossOriginFrame",
+              detail: "Cross-origin frame traversal is unavailable in this phase."
+            }
+          }
+        : layer
+    )
+  };
+
+  const output = buildSelectorExports(blockedCandidate);
+
+  assert.match(output.playwright, /cross-origin-frame/);
+  assert.doesNotMatch(output.playwright, /const element =/);
+  assert.match(output.selenium, /cross-origin-frame/);
+  assert.doesNotMatch(output.selenium, /find_element/);
+});
+
+test("snapshot boundary diagnostics propagate into blocked context exports", () => {
+  const inaccessibleSnapshot = JSON.parse(JSON.stringify(contextSnapshot)) as ElementSnapshot;
+  const frameRoot = inaccessibleSnapshot.children[0]?.children[0]?.children[0];
+  assert.equal(frameRoot?.kind, "frame");
+  frameRoot.diagnostic = {
+    code: "detached-context",
+    messageKey: "snapshot.diagnostic.detachedContext",
+    detail: "The captured frame has been detached."
+  };
+
+  const candidate = generateSelectorCandidates(inaccessibleSnapshot, "shadow-input").find(
+    (item) => item.type === "css"
+  );
+  assert.ok(candidate);
+
+  const output = buildSelectorExports(candidate);
+
+  assert.match(output.json, /detached-context/);
+  assert.match(output.playwright, /detached-context/);
+  assert.doesNotMatch(output.playwright, /const element =/);
+});
+
 test("candidate layers preserve page frame shadow ancestor target order", () => {
   const candidate = generateSelectorCandidates(contextSnapshot, "shadow-input")[0];
 

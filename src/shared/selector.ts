@@ -1,5 +1,5 @@
 import { findElementSnapshot, flattenElementSnapshot, getElementPath } from "./domSnapshot.js";
-import type { ContextBoundary, ElementSnapshot } from "./ipc.js";
+import type { ContextBoundary, ElementSnapshot, SnapshotDiagnostic } from "./ipc.js";
 
 export type SelectorType = "css" | "xpath" | "playwright";
 export type SelectorValidationStatus = "missing" | "unique" | "multiple";
@@ -27,6 +27,7 @@ export type SelectorLayer = {
   enabled: boolean;
   tagEnabled: boolean;
   attributes: SelectorAttribute[];
+  diagnostic?: SnapshotDiagnostic;
 };
 
 export type SelectorScore = {
@@ -140,27 +141,60 @@ export function applySelectorEdit(
 }
 
 export function buildSelectorExports(candidate: SelectorCandidate): SelectorExports {
-  const cssSelector = candidate.type === "css" ? candidate.selector : serializeSelector("css", candidate.layers);
-  const playwrightLocator =
-    candidate.type === "playwright" ? candidate.selector.replace(/^page\./, "page.") : `page.locator(${JSON.stringify(cssSelector)})`;
+  const cssSelector = serializeContentCss(candidate.layers);
+  const playwrightLocator = buildPlaywrightLocator(candidate.layers);
+  const shadowComments = candidate.layers
+    .filter((layer) => layer.enabled && layer.kind === "shadow")
+    .map((layer) => `  // Open Shadow DOM: ${serializeBoundaryHost(layer)}`)
+    .join("\n");
+  const seleniumStatements = buildSeleniumStatements(candidate.layers, cssSelector);
+  const layerDiagnostics = candidate.layers.flatMap((layer) =>
+    layer.diagnostic ? [{ layerId: layer.id, ...layer.diagnostic }] : []
+  );
+  const context = {
+    page: candidate.layers.find((layer) => layer.kind === "page")?.enabled ?? true,
+    frameChain: candidate.layers
+      .filter((layer) => layer.enabled && layer.kind === "frame")
+      .map(serializeBoundaryHost),
+    shadowChain: candidate.layers
+      .filter((layer) => layer.enabled && layer.kind === "shadow")
+      .map(serializeBoundaryHost)
+  };
+  const json = JSON.stringify(
+    {
+      type: candidate.type,
+      selector: candidate.selector,
+      context,
+      score: candidate.score,
+      validation: candidate.validation,
+      diagnostics: {
+        validation: candidate.validation.diagnostics,
+        layers: layerDiagnostics
+      },
+      layers: candidate.layers
+    },
+    null,
+    2
+  );
+  const inaccessibleDiagnostics = layerDiagnostics.filter((diagnostic) =>
+    isInaccessibleContextCode(diagnostic.code)
+  );
+
+  if (inaccessibleDiagnostics.length > 0) {
+    return {
+      json,
+      playwright: formatUnavailableExport("//", inaccessibleDiagnostics),
+      selenium: formatUnavailableExport("#", inaccessibleDiagnostics)
+    };
+  }
 
   return {
-    json: JSON.stringify(
-      {
-        type: candidate.type,
-        selector: candidate.selector,
-        score: candidate.score,
-        validation: candidate.validation,
-        layers: candidate.layers
-      },
-      null,
-      2
-    ),
+    json,
     playwright: `import { test, expect } from "@playwright/test";
 
 test("locates captured element", async ({ page }) => {
   await page.goto("https://example.com");
-  const element = ${playwrightLocator};
+${shadowComments ? `${shadowComments}\n` : ""}  const element = ${playwrightLocator};
   await expect(element).toBeVisible();
   await element.click();
 });
@@ -170,9 +204,108 @@ from selenium.webdriver.common.by import By
 
 driver = webdriver.Chrome()
 driver.get("https://example.com")
-driver.find_element(By.CSS_SELECTOR, ${quotePython(cssSelector)}).click()
+${seleniumStatements.join("\n")}
 `
   };
+}
+
+function buildPlaywrightLocator(layers: SelectorLayer[]): string {
+  let locator = "page";
+  for (const layer of layers) {
+    if (layer.enabled && layer.kind === "frame") {
+      locator += `.frameLocator(${quoteJsSingle(serializeBoundaryHost(layer))})`;
+    }
+  }
+
+  const contentLayers = layers.filter(
+    (layer) => layer.enabled && (layer.kind === "ancestor" || layer.kind === "target")
+  );
+  const targetLayer = contentLayers.filter((layer) => layer.kind === "target").at(-1) ?? contentLayers.at(-1);
+  if (!targetLayer) {
+    return locator;
+  }
+
+  const ancestors = contentLayers.filter((layer) => layer.kind === "ancestor");
+  if (ancestors.length > 0) {
+    locator += `.locator(${quoteJs(ancestors.map(serializeCssLayer).join(" > "))})`;
+  }
+
+  return locator + serializeSelector("playwright", [targetLayer]).slice("page".length);
+}
+
+function buildSeleniumStatements(layers: SelectorLayer[], cssSelector: string): string[] {
+  const statements: string[] = [];
+  let searchContext = "driver";
+  let frameCount = 0;
+  let shadowCount = 0;
+
+  for (const layer of layers) {
+    if (!layer.enabled || (layer.kind !== "frame" && layer.kind !== "shadow")) {
+      continue;
+    }
+
+    const hostSelector = quotePython(serializeBoundaryHost(layer));
+    if (layer.kind === "frame") {
+      frameCount += 1;
+      const frameVariable = numberedVariable("frame", frameCount);
+      statements.push(`${frameVariable} = ${searchContext}.find_element(By.CSS_SELECTOR, ${hostSelector})`);
+      statements.push(`driver.switch_to.frame(${frameVariable})`);
+      searchContext = "driver";
+      continue;
+    }
+
+    shadowCount += 1;
+    const hostVariable = numberedVariable("shadow_host", shadowCount);
+    const rootVariable = numberedVariable("shadow_root", shadowCount);
+    statements.push(`${hostVariable} = ${searchContext}.find_element(By.CSS_SELECTOR, ${hostSelector})`);
+    statements.push(`${rootVariable} = ${hostVariable}.shadow_root`);
+    searchContext = rootVariable;
+  }
+
+  statements.push(`${searchContext}.find_element(By.CSS_SELECTOR, ${quotePython(cssSelector)}).click()`);
+  return statements;
+}
+
+function serializeBoundaryHost(layer: SelectorLayer): string {
+  const attributeSelector = layer.attributes
+    .filter((attribute) => attribute.enabled && attribute.name !== "role" && attribute.name !== TEXT_ATTRIBUTE_NAME)
+    .map((attribute) => `[${attribute.name}="${cssAttributeEscape(attribute.value)}"]`)
+    .join("");
+  return attributeSelector || (layer.tagEnabled ? layer.tagName : "*");
+}
+
+function serializeContentCss(layers: SelectorLayer[]): string {
+  const contentLayers = layers.filter(
+    (layer) => layer.enabled && (layer.kind === "ancestor" || layer.kind === "target")
+  );
+  const fallbackTarget = layers.find((layer) => layer.kind === "target");
+  return contentLayers.map(serializeCssLayer).join(" > ") || (fallbackTarget ? serializeCssLayer(fallbackTarget) : "*");
+}
+
+function numberedVariable(base: string, count: number): string {
+  return count === 1 ? base : `${base}_${count}`;
+}
+
+function isInaccessibleContextCode(code: string): boolean {
+  return code === "cross-origin-frame" || code === "closed-shadow-root" || code === "detached-context";
+}
+
+function formatUnavailableExport(
+  commentPrefix: "//" | "#",
+  diagnostics: Array<{ code: string; detail: string }>
+): string {
+  const detailLines = diagnostics.map(
+    (diagnostic) => `${commentPrefix} [${diagnostic.code}] ${singleLine(diagnostic.detail)}`
+  );
+  return [
+    `${commentPrefix} Selector export unavailable because the target context is inaccessible.`,
+    ...detailLines,
+    ""
+  ].join("\n");
+}
+
+function singleLine(value: string): string {
+  return value.replace(/[\r\n]+/g, " ").trim();
 }
 
 function buildTargetLayers(root: ElementSnapshot, target: ElementSnapshot): SelectorLayer[] {
@@ -215,7 +348,8 @@ function buildTargetLayers(root: ElementSnapshot, target: ElementSnapshot): Sele
       continue;
     }
 
-    layers.push(createSelectorLayer(host, kind, `${kind}-${boundaryCounts[kind]}`, true, true));
+    const layer = createSelectorLayer(host, kind, `${kind}-${boundaryCounts[kind]}`, true, true);
+    layers.push(boundaryNode.diagnostic ? { ...layer, diagnostic: boundaryNode.diagnostic } : layer);
   }
 
   ordinaryNodes.forEach((node, index) => {
@@ -273,7 +407,8 @@ function createSelectorLayer(
     attributes: attributes.map((attribute, attributeIndex) => ({
       ...attribute,
       enabled: enabled && attributeIndex === 0
-    }))
+    })),
+    diagnostic: node.diagnostic
   };
 }
 
@@ -685,6 +820,10 @@ function selectorLabel(type: SelectorType): string {
 
 function quoteJs(value: string): string {
   return JSON.stringify(value);
+}
+
+function quoteJsSingle(value: string): string {
+  return `'${value.replace(/\\/g, "\\\\").replace(/'/g, "\\'")}'`;
 }
 
 function quoteXPath(value: string): string {
