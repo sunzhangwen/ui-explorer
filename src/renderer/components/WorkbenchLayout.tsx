@@ -1,6 +1,7 @@
 import Editor from "@monaco-editor/react";
 import {
   AlertTriangle,
+  Box,
   Braces,
   ChevronDown,
   ChevronRight,
@@ -14,6 +15,7 @@ import {
   Gauge,
   Globe2,
   Languages,
+  Layers3,
   MousePointer2,
   Moon,
   PanelLeft,
@@ -21,6 +23,7 @@ import {
   PlugZap,
   RefreshCw,
   Search,
+  ShieldAlert,
   SlidersHorizontal,
   Sun,
   Waypoints
@@ -28,16 +31,18 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { PointerEvent, ReactNode } from "react";
 import { findElementSnapshot, flattenElementSnapshot, formatElementAttributes } from "../../shared/domSnapshot";
-import type { ElementSnapshot } from "../../shared/ipc";
+import type { ContextBoundary, ElementSnapshot, SnapshotDiagnostic } from "../../shared/ipc";
 import {
   applySelectorEdit,
   buildSelectorExports,
   generateSelectorCandidates,
   type SelectorCandidate,
   type SelectorEdit,
-  type SelectorExports
+  type SelectorExports,
+  type SelectorLayer
 } from "../../shared/selector";
 import { useI18n } from "../i18n/I18nProvider";
+import type { MessageKey } from "../i18n/messages";
 import { useAppStore } from "../store/useAppStore";
 
 type ResizeSide = "left" | "right";
@@ -45,6 +50,76 @@ type ExportFormat = keyof SelectorExports;
 type LeftPanelSectionId = "targets" | "current" | "tests";
 const TREE_ROW_HEIGHT = 30;
 const TREE_OVERSCAN = 12;
+
+const SELECTOR_LAYER_MESSAGE_KEYS = {
+  page: "selector.layer.page",
+  frame: "selector.layer.frame",
+  shadow: "selector.layer.shadow",
+  ancestor: "selector.layer.ancestor",
+  target: "selector.layer.target"
+} as const satisfies Record<SelectorLayer["kind"], MessageKey>;
+
+const DIAGNOSTIC_MESSAGE_KEYS = {
+  "cross-origin-frame": "diagnostic.crossOriginFrame",
+  "closed-shadow-root": "diagnostic.closedShadowRoot",
+  "detached-context": "diagnostic.detachedContext"
+} as const satisfies Record<SnapshotDiagnostic["code"], MessageKey>;
+
+function selectorLayerLabel(kind: SelectorLayer["kind"], t: (key: MessageKey) => string): string {
+  return t(SELECTOR_LAYER_MESSAGE_KEYS[kind]);
+}
+
+function TreeNodeIcon({ node }: { node: ElementSnapshot }): JSX.Element {
+  if (node.kind === "page") return <Globe2 size={13} />;
+  if (node.kind === "frame") return <PanelRight size={13} />;
+  if (node.kind === "shadow") return <Layers3 size={13} />;
+  if (node.kind === "diagnostic") return <ShieldAlert size={13} />;
+  return <Box size={13} />;
+}
+
+function treeNodeBadgeKey(node: ElementSnapshot): MessageKey | null {
+  const kind = node.kind ?? "element";
+  switch (kind) {
+    case "page":
+      return "tree.badge.page";
+    case "frame":
+      return "tree.badge.frame";
+    case "shadow":
+      return "tree.badge.shadow";
+    case "diagnostic":
+      return "tree.badge.limit";
+    case "element":
+      return null;
+    default: {
+      const exhaustiveKind: never = kind;
+      throw new Error(`Unhandled tree node kind: ${exhaustiveKind}`);
+    }
+  }
+}
+
+function diagnosticLabel(diagnostic: SnapshotDiagnostic, t: (key: MessageKey) => string): string {
+  return t(DIAGNOSTIC_MESSAGE_KEYS[diagnostic.code]);
+}
+
+function contextHostLabel(boundary: ContextBoundary): string {
+  const { hostAttributes, hostTagName } = boundary;
+  const id = hostAttributes.id;
+  if (id) {
+    return `${hostTagName}#${id}`;
+  }
+
+  const identifyingAttribute = ["data-testid", "name", "title"].find((name) => hostAttributes[name]);
+  return identifyingAttribute
+    ? `${hostTagName}[${identifyingAttribute}="${hostAttributes[identifyingAttribute]}"]`
+    : hostTagName;
+}
+
+function contextPath(context: ContextBoundary[], kind: ContextBoundary["kind"]): string {
+  return context
+    .filter((boundary) => boundary.kind === kind)
+    .map(contextHostLabel)
+    .join(" → ") || "-";
+}
 
 export function WorkbenchLayout(): JSX.Element {
   const { t } = useI18n();
@@ -748,7 +823,7 @@ function SelectorPanel({
                 onChange={(event) => onEdit(selectedCandidate, { layerId: layer.id, enabled: event.currentTarget.checked })}
               />
               <SlidersHorizontal size={13} />
-              <span>{layer.kind === "target" ? t("selector.targetLayer") : t("selector.ancestorLayer")}</span>
+              <span>{selectorLayerLabel(layer.kind, t)}</span>
             </label>
             <label>
               <input
@@ -830,7 +905,7 @@ function findTreeSearchMatches(rows: ElementSnapshot[], query: string): ElementS
     return [];
   }
 
-  return rows.filter((row) => getSearchText(row).includes(normalizedQuery));
+  return rows.filter((row) => row.kind !== "diagnostic" && getSearchText(row).includes(normalizedQuery));
 }
 
 function getSearchText(node: ElementSnapshot): string {
@@ -906,6 +981,7 @@ function VirtualTree({
   scrollTop: number;
   selectedElementId: string | null;
 }): JSX.Element {
+  const { t } = useI18n();
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const startIndex = Math.max(0, Math.floor(scrollTop / TREE_ROW_HEIGHT) - TREE_OVERSCAN);
   const visibleCount = 90;
@@ -929,8 +1005,28 @@ function VirtualTree({
         {visibleRows.map((row, index) => {
           const hasChildren = row.children.length > 0;
           const isCollapsed = collapsedNodeIds.has(row.id);
-          const isSelected = row.id === selectedElementId;
+          const isDiagnostic = row.kind === "diagnostic";
+          const isSelected = !isDiagnostic && row.id === selectedElementId;
           const isSearchMatch = searchMatchIds.has(row.id);
+          const badgeKey = treeNodeBadgeKey(row);
+          const badgeKind = badgeKey?.replace("tree.badge.", "");
+          const detail = row.diagnostic
+            ? `${diagnosticLabel(row.diagnostic, t)} — ${row.diagnostic.detail}`
+            : formatElementAttributes(row);
+          const nodeContent = (
+            <>
+              <span className="tree-node-kind">
+                <TreeNodeIcon node={row} />
+                <span>{row.tagName ?? row.nodeName}</span>
+                {badgeKey ? (
+                  <span className="tree-kind-badge" data-kind={badgeKind}>
+                    {t(badgeKey)}
+                  </span>
+                ) : null}
+              </span>
+              <small>{detail}</small>
+            </>
+          );
           return (
             <div
               className={["tree-row", isSelected ? "selected" : "", isSearchMatch ? "search-match" : ""].filter(Boolean).join(" ")}
@@ -949,10 +1045,15 @@ function VirtualTree({
               >
                 {isCollapsed ? <ChevronRight size={13} /> : <ChevronDown size={13} />}
               </button>
-              <button type="button" className="tree-node-main" onClick={() => onSelect(row.id)}>
-                <span>{row.tagName ?? row.nodeName}</span>
-                <small>{formatElementAttributes(row)}</small>
-              </button>
+              {isDiagnostic ? (
+                <div className="tree-node-main diagnostic" role="note">
+                  {nodeContent}
+                </div>
+              ) : (
+                <button type="button" className="tree-node-main" onClick={() => onSelect(row.id)}>
+                  {nodeContent}
+                </button>
+              )}
             </div>
           );
         })}
@@ -972,6 +1073,7 @@ function ElementDetails({ element }: { element: ElementSnapshot | null }): JSX.E
     ? `${Math.round(element.boundingBox.x)}, ${Math.round(element.boundingBox.y)}, ${Math.round(element.boundingBox.width)} x ${Math.round(element.boundingBox.height)}`
     : "-";
   const attributeEntries = Object.entries(element.attributes);
+  const context = element.context ?? [];
 
   return (
     <div className="property-stack">
@@ -991,6 +1093,26 @@ function ElementDetails({ element }: { element: ElementSnapshot | null }): JSX.E
         <h3>{t("properties.layout")}</h3>
         <PropertyRow label={t("properties.boundingBox")} value={bounds} />
       </section>
+      <section className="property-card">
+        <h3>{t("properties.context")}</h3>
+        <div className="context-path">
+          <span>{t("properties.framePath")}</span>
+          <code>{contextPath(context, "frame")}</code>
+        </div>
+        <div className="context-path">
+          <span>{t("properties.shadowPath")}</span>
+          <code>{contextPath(context, "shadow")}</code>
+        </div>
+      </section>
+      {element.diagnostic ? (
+        <section className="property-card context-diagnostic">
+          <ShieldAlert size={15} />
+          <div>
+            <h3>{diagnosticLabel(element.diagnostic, t)}</h3>
+            <p>{element.diagnostic.detail}</p>
+          </div>
+        </section>
+      ) : null}
       <section className="property-card">
         <h3>{t("properties.attributes")}</h3>
         {attributeEntries.length === 0 ? (

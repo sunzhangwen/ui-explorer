@@ -525,6 +525,52 @@ select {
   text-align: left;
 }
 
+.tree-node-main.diagnostic {
+  cursor: default;
+  color: rgb(var(--color-text));
+}
+
+.tree-node-kind {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.tree-node-kind > svg {
+  flex: 0 0 auto;
+  color: rgb(var(--color-muted));
+}
+
+.tree-kind-badge {
+  display: inline-flex;
+  align-items: center;
+  height: calc(var(--tree-row-height) - 16px);
+  min-height: 12px;
+  padding: 0 var(--space-1);
+  border: 1px solid rgb(var(--color-border));
+  border-radius: calc(var(--radius-ui) - 3px);
+  background: rgb(var(--color-elevated));
+  color: rgb(var(--color-muted));
+  font-family: var(--font-sans);
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.04em;
+}
+
+.tree-kind-badge[data-kind="frame"],
+.tree-kind-badge[data-kind="shadow"] {
+  border-color: rgb(var(--color-accent) / 0.52);
+  color: rgb(var(--color-accent));
+}
+
+.tree-kind-badge[data-kind="limit"] {
+  border-color: rgb(var(--color-danger) / 0.52);
+  color: rgb(var(--color-danger));
+}
+
 .tree-node-main small,
 .target-page small {
   min-width: 0;
@@ -650,6 +696,47 @@ select {
 .property-row strong {
   overflow-wrap: anywhere;
   text-align: right;
+}
+
+.context-path {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  align-items: start;
+  gap: var(--space-2);
+  min-width: 0;
+  font-size: var(--font-size-sm);
+}
+
+.context-path span {
+  color: rgb(var(--color-muted));
+}
+
+.context-path code {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: rgb(var(--color-text));
+  font-family: var(--font-mono);
+  text-align: right;
+}
+
+.context-diagnostic {
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  border-color: rgb(var(--color-danger) / 0.58);
+  background: rgb(var(--color-danger) / 0.08);
+}
+
+.context-diagnostic > svg,
+.context-diagnostic h3 {
+  color: rgb(var(--color-danger));
+}
+
+.context-diagnostic p {
+  margin: var(--space-1) 0 0;
+  color: rgb(var(--color-muted));
+  font-size: var(--font-size-xs);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
 }
 
 .collapsible-section {

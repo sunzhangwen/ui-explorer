@@ -35,6 +35,10 @@ export type MessageKey =
   | "tree.searchNoResults"
   | "tree.previousMatch"
   | "tree.nextMatch"
+  | "tree.badge.page"
+  | "tree.badge.frame"
+  | "tree.badge.shadow"
+  | "tree.badge.limit"
   | "properties.selected"
   | "properties.attributes"
   | "properties.accessibility"
@@ -47,6 +51,9 @@ export type MessageKey =
   | "properties.tag"
   | "properties.nodeName"
   | "properties.nodeType"
+  | "properties.context"
+  | "properties.framePath"
+  | "properties.shadowPath"
   | "preview.title"
   | "preview.openPage"
   | "preview.monaco"
@@ -60,6 +67,11 @@ export type MessageKey =
   | "selector.layers"
   | "selector.targetLayer"
   | "selector.ancestorLayer"
+  | "selector.layer.page"
+  | "selector.layer.frame"
+  | "selector.layer.shadow"
+  | "selector.layer.ancestor"
+  | "selector.layer.target"
   | "selector.diagnostics"
   | "selector.noRisks"
   | "selector.exportPreview"
@@ -72,6 +84,9 @@ export type MessageKey =
   | "selector.diagnostic.hidden"
   | "selector.risk.dynamicId"
   | "selector.risk.lowSignal"
+  | "diagnostic.crossOriginFrame"
+  | "diagnostic.closedShadowRoot"
+  | "diagnostic.detachedContext"
   | "diagnostics.phase"
   | "diagnostics.ipc"
   | "diagnostics.app"
@@ -129,6 +144,10 @@ export const messages: Record<"zh-CN" | "en-US", Record<MessageKey, string>> = {
     "tree.searchNoResults": "0",
     "tree.previousMatch": "上一个匹配",
     "tree.nextMatch": "下一个匹配",
+    "tree.badge.page": "PAGE",
+    "tree.badge.frame": "FRAME",
+    "tree.badge.shadow": "SHADOW",
+    "tree.badge.limit": "LIMIT",
     "properties.selected": "选中元素",
     "properties.attributes": "DOM 属性",
     "properties.accessibility": "可访问性",
@@ -141,6 +160,9 @@ export const messages: Record<"zh-CN" | "en-US", Record<MessageKey, string>> = {
     "properties.tag": "标签",
     "properties.nodeName": "节点名",
     "properties.nodeType": "节点类型",
+    "properties.context": "上下文",
+    "properties.framePath": "Frame 路径",
+    "properties.shadowPath": "Shadow 路径",
     "preview.title": "验收样例",
     "preview.openPage": "打开页面",
     "preview.monaco": "导出预览占位",
@@ -154,6 +176,11 @@ export const messages: Record<"zh-CN" | "en-US", Record<MessageKey, string>> = {
     "selector.layers": "层级编辑",
     "selector.targetLayer": "目标层",
     "selector.ancestorLayer": "祖先层",
+    "selector.layer.page": "页面层",
+    "selector.layer.frame": "Frame 层",
+    "selector.layer.shadow": "Shadow 层",
+    "selector.layer.ancestor": "祖先层",
+    "selector.layer.target": "目标层",
     "selector.diagnostics": "诊断",
     "selector.noRisks": "暂无风险",
     "selector.exportPreview": "导出预览",
@@ -166,6 +193,9 @@ export const messages: Record<"zh-CN" | "en-US", Record<MessageKey, string>> = {
     "selector.diagnostic.hidden": "目标元素不可见",
     "selector.risk.dynamicId": "疑似动态 ID",
     "selector.risk.lowSignal": "低稳定性属性",
+    "diagnostic.crossOriginFrame": "跨域 Frame 内容不可访问",
+    "diagnostic.closedShadowRoot": "Closed Shadow Root 内容不可访问",
+    "diagnostic.detachedContext": "上下文已分离，无法访问",
     "diagnostics.phase": "Phase 1 网页连接与元素捕获",
     "diagnostics.ipc": "主进程往返",
     "diagnostics.app": "运行环境",
@@ -222,6 +252,10 @@ export const messages: Record<"zh-CN" | "en-US", Record<MessageKey, string>> = {
     "tree.searchNoResults": "0",
     "tree.previousMatch": "Previous match",
     "tree.nextMatch": "Next match",
+    "tree.badge.page": "PAGE",
+    "tree.badge.frame": "FRAME",
+    "tree.badge.shadow": "SHADOW",
+    "tree.badge.limit": "LIMIT",
     "properties.selected": "Selected element",
     "properties.attributes": "DOM attributes",
     "properties.accessibility": "Accessibility",
@@ -234,6 +268,9 @@ export const messages: Record<"zh-CN" | "en-US", Record<MessageKey, string>> = {
     "properties.tag": "Tag",
     "properties.nodeName": "Node name",
     "properties.nodeType": "Node type",
+    "properties.context": "Context",
+    "properties.framePath": "Frame path",
+    "properties.shadowPath": "Shadow path",
     "preview.title": "Acceptance samples",
     "preview.openPage": "Open page",
     "preview.monaco": "Export preview placeholder",
@@ -247,6 +284,11 @@ export const messages: Record<"zh-CN" | "en-US", Record<MessageKey, string>> = {
     "selector.layers": "Layer editor",
     "selector.targetLayer": "Target layer",
     "selector.ancestorLayer": "Ancestor layer",
+    "selector.layer.page": "Page layer",
+    "selector.layer.frame": "Frame layer",
+    "selector.layer.shadow": "Shadow layer",
+    "selector.layer.ancestor": "Ancestor layer",
+    "selector.layer.target": "Target layer",
     "selector.diagnostics": "Diagnostics",
     "selector.noRisks": "No risks",
     "selector.exportPreview": "Export preview",
@@ -259,6 +301,9 @@ export const messages: Record<"zh-CN" | "en-US", Record<MessageKey, string>> = {
     "selector.diagnostic.hidden": "Target element is hidden",
     "selector.risk.dynamicId": "Possible dynamic ID",
     "selector.risk.lowSignal": "Low-stability attribute",
+    "diagnostic.crossOriginFrame": "Cross-origin frame content is unavailable",
+    "diagnostic.closedShadowRoot": "Closed Shadow Root content is unavailable",
+    "diagnostic.detachedContext": "The browsing context is detached and unavailable",
     "diagnostics.phase": "Phase 1 web capture MVP",
     "diagnostics.ipc": "Main process round trip",
     "diagnostics.app": "Runtime",
