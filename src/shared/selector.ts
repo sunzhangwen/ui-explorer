@@ -217,9 +217,7 @@ function buildPlaywrightLocator(layers: SelectorLayer[]): string {
     }
   }
 
-  const contentLayers = layers.filter(
-    (layer) => layer.enabled && (layer.kind === "ancestor" || layer.kind === "target")
-  );
+  const contentLayers = getEnabledContentLayers(layers);
   const targetLayer = contentLayers.filter((layer) => layer.kind === "target").at(-1) ?? contentLayers.at(-1);
   if (!targetLayer) {
     return locator;
@@ -275,11 +273,23 @@ function serializeBoundaryHost(layer: SelectorLayer): string {
 }
 
 function serializeContentCss(layers: SelectorLayer[]): string {
-  const contentLayers = layers.filter(
-    (layer) => layer.enabled && (layer.kind === "ancestor" || layer.kind === "target")
-  );
+  const contentLayers = getEnabledContentLayers(layers);
   const fallbackTarget = layers.find((layer) => layer.kind === "target");
   return contentLayers.map(serializeCssLayer).join(" > ") || (fallbackTarget ? serializeCssLayer(fallbackTarget) : "*");
+}
+
+function getEnabledContentLayers(layers: SelectorLayer[]): SelectorLayer[] {
+  const boundaryNodeIds = new Set(
+    layers
+      .filter((layer) => layer.kind === "frame" || layer.kind === "shadow")
+      .map((layer) => layer.nodeId)
+  );
+  return layers.filter(
+    (layer) =>
+      layer.enabled &&
+      (layer.kind === "ancestor" || layer.kind === "target") &&
+      !boundaryNodeIds.has(layer.nodeId)
+  );
 }
 
 function numberedVariable(base: string, count: number): string {
@@ -319,12 +329,20 @@ function buildTargetLayers(root: ElementSnapshot, target: ElementSnapshot): Sele
 
   const page = path.find((node) => node.kind === "page");
   const boundaries = path.filter((node) => node.kind === "frame" || node.kind === "shadow");
+  const boundaryHostNodeIds = new Set(
+    boundaries
+      .map((node) => node.context?.at(-1)?.hostNodeId)
+      .filter((nodeId): nodeId is string => nodeId !== undefined)
+  );
+  const targetContext = target.context ?? [];
   const ordinaryAncestors = path
     .filter(
       (node) =>
         node.tagName &&
         (node.kind ?? "element") === "element" &&
-        !["html", "body"].includes(node.tagName)
+        !["html", "body"].includes(node.tagName) &&
+        !boundaryHostNodeIds.has(node.id) &&
+        contextSignaturesMatch(node.context ?? [], targetContext)
     )
     .slice(-2);
   const ordinaryNodes = ordinaryAncestors.at(-1)?.id === target.id ? ordinaryAncestors : [...ordinaryAncestors, target];
@@ -836,7 +854,7 @@ function quoteXPath(value: string): string {
 
 function quotePython(value: string): string {
   if (!value.includes("'")) {
-    return `'${value}'`;
+    return `'${value.replace(/\\/g, "\\\\")}'`;
   }
 
   return JSON.stringify(value);
