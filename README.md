@@ -6,14 +6,16 @@ UI Explorer 是一个基于 Electron + React + TypeScript 的网页 UI 元素探
 
 - 通过 Chrome DevTools Protocol 连接 Chrome/Edge 调试目标。
 - 列出可检查页面，并支持在多个浏览器 target 间切换。
-- 捕获并展示 DOM、iframe、open Shadow DOM 层级快照。
+- 捕获并展示 DOM、同源嵌套 iframe 与 open Shadow DOM 层级快照。
+- 在元素树和属性面板中保留按进入顺序排列的 frame / Shadow 上下文路径，支持跨多个同源 frame 和嵌套 open Shadow Root 定位元素。
 - 展示选中元素的标签、属性、文本、可访问性、可见性和布局信息。
 - 自动生成 CSS、XPath、Playwright Locator 三类 Selector 候选。
 - 对 Selector 做匹配数量、唯一性、可见性、目标一致性验证。
 - 按唯一性、稳定性、可读性计算综合评分，并展示风险诊断。
-- 支持启用/禁用 Selector 层级、标签和属性，支持手动编辑属性值。
+- 支持启用/禁用上下文（frame、Shadow）及 Selector 的层级、标签和属性，支持手动编辑属性值；上下文层级变更会立即重新验证。
 - Selector 多匹配时可在目标页面编号高亮所有匹配元素。
-- 支持导出 JSON、Playwright TypeScript、Selenium Python 代码预览。
+- 支持导出 JSON、Playwright TypeScript、Selenium Python 代码预览；导出会保留 frame 进入顺序并处理 open Shadow DOM 上下文。
+- 对跨域 frame、OOPIF、closed Shadow Root 和已脱离上下文显示限制诊断，避免将不可访问的内部元素当作可定位目标。
 - 提供中英文 i18n、深浅主题和普通/紧凑密度界面。
 
 ## 技术栈
@@ -142,8 +144,14 @@ src/
 
 内置测试页面位于 `public/test-pages/`，覆盖普通 DOM、iframe、Shadow DOM、动态列表、表格和弹层等场景。它们用于验证元素捕获、Selector 生成、评分、验证和导出能力。
 
+其中 `iframe.html` 覆盖同源嵌套 frame，`shadow-dom.html` 覆盖 open、嵌套 open 与 closed Shadow Root。对于同源 frame 与 open Shadow DOM，元素树、属性路径、Selector 层级、导出代码和限制诊断共用同一套上下文信息。
+
+## 上下文范围与限制
+
+Phase 3 支持遍历同源嵌套 iframe，以及进入 open Shadow DOM。跨域 iframe 与浏览器以 OOPIF（Out-of-Process iframe）形式承载的 frame 内容不在本阶段的遍历范围内：应用会显示不可访问的上下文诊断，而不会报告其内部的可选元素。该能力明确推迟到 Phase 8。closed Shadow Root 同样只显示限制诊断，无法捕获或定位其内部节点。
+
 ## 开发状态
 
-项目已完成网页端 MVP 的基础连接、快照展示和 Phase 2 Selector 核心能力。后续规划包括项目保存、iframe/Shadow 穿透增强、表格识别、UiPath 兼容导出、桌面 UIAutomation 捕获、冻结捕获和高级诊断能力。
+项目已完成网页端 MVP 的基础连接、快照展示、Phase 2 Selector 核心能力，以及 Phase 3 的同源 frame / open Shadow DOM 上下文支持。后续规划包括项目保存、跨域/OOPIF frame 遍历（Phase 8）、表格识别、UiPath 兼容导出、桌面 UIAutomation 捕获、冻结捕获和高级诊断能力。
 
 详细需求见 [REQUIREMENTS.md](./REQUIREMENTS.md)。
