@@ -4,6 +4,8 @@ import { runInNewContext } from "node:vm";
 import { ELEMENT_PICKER_SCRIPT, HIGHLIGHT_SCRIPT, SNAPSHOT_SCRIPT } from "./browserScripts.js";
 
 type FakeDocument = {
+  nodeType: number;
+  ownerDocument: null;
   appended: unknown[];
   querySelectorAll: () => unknown[];
   createElement: () => {
@@ -15,24 +17,38 @@ type FakeDocument = {
   documentElement: {
     appendChild: (node: unknown) => void;
   };
+  getRootNode: () => FakeDocument;
 };
 
 type FakeElement = {
   nodeType: number;
   isConnected: boolean;
   ownerDocument: FakeDocument;
+  root: FakeRoot;
+  getRootNode: () => FakeRoot;
   getBoundingClientRect: () => { left: number; top: number; width: number; height: number };
   contentDocument?: FakeDocument | null;
-  shadowRoot?: object | null;
+  shadowRoot?: FakeShadowRoot | null;
 };
+
+type FakeShadowRoot = {
+  nodeType: number;
+  host: FakeElement;
+  ownerDocument: FakeDocument;
+  getRootNode: () => FakeShadowRoot;
+};
+
+type FakeRoot = FakeDocument | FakeShadowRoot;
 
 type RuntimeContextIdentity =
   | { kind: "frame"; host: FakeElement; root: FakeDocument }
-  | { kind: "shadow"; host: FakeElement; root: object };
+  | { kind: "shadow"; host: FakeElement; root: FakeShadowRoot };
 
 function createFakeDocument(): FakeDocument {
   const appended: unknown[] = [];
-  return {
+  const document: FakeDocument = {
+    nodeType: 9,
+    ownerDocument: null,
     appended,
     querySelectorAll: () => [],
     createElement: () => ({
@@ -42,17 +58,37 @@ function createFakeDocument(): FakeDocument {
     }),
     documentElement: {
       appendChild: (node) => appended.push(node)
-    }
+    },
+    getRootNode: () => document
   };
+  return document;
 }
 
-function createFakeElement(ownerDocument: FakeDocument, isConnected = true): FakeElement {
-  return {
+function createFakeElement(
+  ownerDocument: FakeDocument,
+  isConnected = true,
+  root: FakeRoot = ownerDocument
+): FakeElement {
+  const element: FakeElement = {
     nodeType: 1,
     isConnected,
     ownerDocument,
+    root,
+    getRootNode: () => element.root,
     getBoundingClientRect: () => ({ left: 1, top: 2, width: 30, height: 40 })
   };
+  return element;
+}
+
+function createFakeShadowRoot(host: FakeElement): FakeShadowRoot {
+  const root: FakeShadowRoot = {
+    nodeType: 11,
+    host,
+    ownerDocument: host.ownerDocument,
+    getRootNode: () => root
+  };
+  host.shadowRoot = root;
+  return root;
 }
 
 function runHighlight(
@@ -69,7 +105,7 @@ function runHighlight(
 } {
   const topDocument = documents.values().next().value ?? createFakeDocument();
   return runInNewContext(HIGHLIGHT_SCRIPT.replace("__ELEMENT_IDS__", JSON.stringify(elementIds)), {
-    Node: { ELEMENT_NODE: 1 },
+    Node: { ELEMENT_NODE: 1, DOCUMENT_NODE: 9 },
     document: topDocument,
     window: {
       __uiExplorerElements: registry,
@@ -185,16 +221,16 @@ test("highlight reports a frame that becomes runtime-inaccessible as detached", 
 
 test("highlight detects detached shadow hosts and replaced shadow roots", () => {
   const document = createFakeDocument();
-  const capturedRoot = {};
   const detachedHost = createFakeElement(document, false);
-  detachedHost.shadowRoot = capturedRoot;
+  const capturedRoot = createFakeShadowRoot(detachedHost);
   const replacedHost = createFakeElement(document);
-  replacedHost.shadowRoot = {};
+  const replacedCapturedRoot = createFakeShadowRoot(replacedHost);
+  createFakeShadowRoot(replacedHost);
   const detachedTarget = createFakeElement(document);
   const replacedTarget = createFakeElement(document);
   const contexts = new Map<string, RuntimeContextIdentity[]>([
     ["detached-target", [{ kind: "shadow", host: detachedHost, root: capturedRoot }]],
-    ["replaced-target", [{ kind: "shadow", host: replacedHost, root: capturedRoot }]]
+    ["replaced-target", [{ kind: "shadow", host: replacedHost, root: replacedCapturedRoot }]]
   ]);
 
   const result = runHighlight(
@@ -217,10 +253,9 @@ test("highlight accepts attached nested frame and shadow identities", () => {
   const frameDocument = createFakeDocument();
   const frameHost = createFakeElement(topDocument);
   frameHost.contentDocument = frameDocument;
-  const shadowRoot = {};
   const shadowHost = createFakeElement(frameDocument);
-  shadowHost.shadowRoot = shadowRoot;
-  const target = createFakeElement(frameDocument);
+  const shadowRoot = createFakeShadowRoot(shadowHost);
+  const target = createFakeElement(frameDocument, true, shadowRoot);
   const contexts = new Map<string, RuntimeContextIdentity[]>([
     [
       "target",
@@ -240,4 +275,75 @@ test("highlight accepts attached nested frame and shadow identities", () => {
 
   assert.deepEqual(normalizeVmValue(result.targets), [{ elementId: "target", status: "highlighted" }]);
   assert.equal(frameDocument.appended.length, 1);
+});
+
+test("highlight rejects a captured frame target adopted into the top document", () => {
+  const topDocument = createFakeDocument();
+  const frameDocument = createFakeDocument();
+  const frameHost = createFakeElement(topDocument);
+  frameHost.contentDocument = frameDocument;
+  const adoptedTarget = createFakeElement(topDocument);
+  const contexts = new Map<string, RuntimeContextIdentity[]>([
+    ["target", [{ kind: "frame", host: frameHost, root: frameDocument }]]
+  ]);
+
+  const result = runHighlight(
+    ["target"],
+    new Map([["target", adoptedTarget]]),
+    contexts,
+    new Set([topDocument, frameDocument])
+  );
+
+  assert.equal(result.targets[0]?.status, "detached");
+  assert.match(result.targets[0]?.diagnostic?.detail ?? "", /root|document|context/i);
+});
+
+test("highlight rejects a captured shadow target moved into light DOM", () => {
+  const document = createFakeDocument();
+  const shadowHost = createFakeElement(document);
+  const shadowRoot = createFakeShadowRoot(shadowHost);
+  const movedTarget = createFakeElement(document);
+  const contexts = new Map<string, RuntimeContextIdentity[]>([
+    ["target", [{ kind: "shadow", host: shadowHost, root: shadowRoot }]]
+  ]);
+
+  const result = runHighlight(
+    ["target"],
+    new Map([["target", movedTarget]]),
+    contexts,
+    new Set([document])
+  );
+
+  assert.equal(result.targets[0]?.status, "detached");
+  assert.match(result.targets[0]?.diagnostic?.detail ?? "", /root|document|context/i);
+});
+
+test("highlight rejects a nested context host moved to another connected root", () => {
+  const document = createFakeDocument();
+  const outerHost = createFakeElement(document);
+  const outerRoot = createFakeShadowRoot(outerHost);
+  const otherHost = createFakeElement(document);
+  const otherRoot = createFakeShadowRoot(otherHost);
+  const innerHost = createFakeElement(document, true, otherRoot);
+  const innerRoot = createFakeShadowRoot(innerHost);
+  const target = createFakeElement(document, true, innerRoot);
+  const contexts = new Map<string, RuntimeContextIdentity[]>([
+    [
+      "target",
+      [
+        { kind: "shadow", host: outerHost, root: outerRoot },
+        { kind: "shadow", host: innerHost, root: innerRoot }
+      ]
+    ]
+  ]);
+
+  const result = runHighlight(
+    ["target"],
+    new Map([["target", target]]),
+    contexts,
+    new Set([document])
+  );
+
+  assert.equal(result.targets[0]?.status, "detached");
+  assert.match(result.targets[0]?.diagnostic?.detail ?? "", /host|root|context/i);
 });

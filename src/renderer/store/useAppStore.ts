@@ -1,7 +1,11 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { findElementSnapshot } from "../../shared/domSnapshot";
-import { mergeHighlightResult } from "../../shared/highlightDiagnostics";
+import {
+  captureHighlightRequest,
+  isHighlightRequestCurrent,
+  mergeCurrentHighlightResult
+} from "../../shared/highlightDiagnostics";
 import {
   TEST_PAGES,
   type AppInfo,
@@ -51,6 +55,7 @@ type AppStore = {
   browserTargets: BrowserTarget[];
   selectedBrowserTargetId: string | null;
   domSnapshot: DomSnapshotResult | null;
+  domSnapshotGeneration: number;
   selectedElementId: string | null;
   setLocale: (locale: Locale) => void;
   setTheme: (theme: ThemeName) => void;
@@ -98,6 +103,7 @@ export const useAppStore = create<AppStore>()(
       browserTargets: [],
       selectedBrowserTargetId: null,
       domSnapshot: null,
+      domSnapshotGeneration: 0,
       selectedElementId: null,
       setLocale: (locale) => set({ locale }),
       setTheme: (theme) => set({ theme }),
@@ -130,6 +136,7 @@ export const useAppStore = create<AppStore>()(
           set({
             browserConnection: { state: "error", endpoint, message },
             domSnapshot: null,
+            domSnapshotGeneration: get().domSnapshotGeneration + 1,
             selectedElementId: null
           });
         }
@@ -137,19 +144,24 @@ export const useAppStore = create<AppStore>()(
       disconnectBrowser: async () => {
         const api = getApi();
         await api.disconnectBrowser();
-        set({
+        set((state) => ({
           browserConnection: { state: "idle" },
           browserTargets: [],
           selectedBrowserTargetId: null,
           domSnapshot: null,
+          domSnapshotGeneration: state.domSnapshotGeneration + 1,
           selectedElementId: null
-        });
+        }));
       },
       refreshDomSnapshot: async () => {
         const api = getApi();
         try {
           const snapshot = await api.getDomSnapshot();
-          set({ domSnapshot: snapshot, selectedElementId: snapshot.root?.id ?? null });
+          set((state) => ({
+            domSnapshot: snapshot,
+            domSnapshotGeneration: state.domSnapshotGeneration + 1,
+            selectedElementId: snapshot.root?.id ?? null
+          }));
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
           const currentConnection = get().browserConnection;
@@ -160,28 +172,49 @@ export const useAppStore = create<AppStore>()(
       selectBrowserTarget: async (targetId) => {
         const api = getApi();
         const snapshot = await api.selectBrowserTarget(targetId);
-        set({
+        set((state) => ({
           selectedBrowserTargetId: targetId,
           domSnapshot: snapshot,
+          domSnapshotGeneration: state.domSnapshotGeneration + 1,
           selectedElementId: snapshot.root?.id ?? null
-        });
+        }));
       },
       selectElement: async (elementId) => {
         set({ selectedElementId: elementId });
-        const selectedElement = findElementSnapshot(get().domSnapshot?.root ?? null, elementId);
+        const requestState = get();
+        const selectedElement = findElementSnapshot(requestState.domSnapshot?.root ?? null, elementId);
         if (!selectedElement || !isTreeNodeHighlightable(selectedElement)) {
           return;
         }
+        const request = captureHighlightRequest(
+          requestState.domSnapshot,
+          requestState.selectedBrowserTargetId,
+          requestState.domSnapshotGeneration
+        );
         try {
           const result = await getApi().highlightElement(elementId);
           set((state) => {
-            if (!state.domSnapshot) {
-              return state;
-            }
-            const domSnapshot = mergeHighlightResult(state.domSnapshot, result);
+            const domSnapshot = mergeCurrentHighlightResult(
+              state.domSnapshot,
+              state.selectedBrowserTargetId,
+              state.domSnapshotGeneration,
+              request,
+              result
+            );
             return domSnapshot === state.domSnapshot ? state : { domSnapshot };
           });
         } catch (error) {
+          const currentState = get();
+          if (
+            !isHighlightRequestCurrent(
+              currentState.domSnapshot,
+              currentState.selectedBrowserTargetId,
+              currentState.domSnapshotGeneration,
+              request
+            )
+          ) {
+            return;
+          }
           const message = error instanceof Error ? error.message : String(error);
           const currentConnection = get().browserConnection;
           const endpoint = currentConnection.state === "idle" ? "" : currentConnection.endpoint;
@@ -189,16 +222,36 @@ export const useAppStore = create<AppStore>()(
         }
       },
       highlightElements: async (elementIds) => {
+        const requestState = get();
+        const request = captureHighlightRequest(
+          requestState.domSnapshot,
+          requestState.selectedBrowserTargetId,
+          requestState.domSnapshotGeneration
+        );
         try {
           const result = await getApi().highlightElements(elementIds);
           set((state) => {
-            if (!state.domSnapshot) {
-              return state;
-            }
-            const domSnapshot = mergeHighlightResult(state.domSnapshot, result);
+            const domSnapshot = mergeCurrentHighlightResult(
+              state.domSnapshot,
+              state.selectedBrowserTargetId,
+              state.domSnapshotGeneration,
+              request,
+              result
+            );
             return domSnapshot === state.domSnapshot ? state : { domSnapshot };
           });
         } catch (error) {
+          const currentState = get();
+          if (
+            !isHighlightRequestCurrent(
+              currentState.domSnapshot,
+              currentState.selectedBrowserTargetId,
+              currentState.domSnapshotGeneration,
+              request
+            )
+          ) {
+            return;
+          }
           const message = error instanceof Error ? error.message : String(error);
           const currentConnection = get().browserConnection;
           const endpoint = currentConnection.state === "idle" ? "" : currentConnection.endpoint;
@@ -303,11 +356,15 @@ function emptySnapshot(): DomSnapshotResult {
 }
 
 function setConnectionInfo(
-  set: (state: Partial<AppStore>) => void,
+  set: (
+    state:
+      | Partial<AppStore>
+      | ((current: AppStore) => Partial<AppStore>)
+  ) => void,
   info: BrowserConnectionInfo,
   snapshot: DomSnapshotResult
 ): void {
-  set({
+  set((state) => ({
     browserConnection: {
       state: "connected",
       endpoint: info.endpoint,
@@ -317,8 +374,9 @@ function setConnectionInfo(
     browserTargets: info.targets,
     selectedBrowserTargetId: info.targetId,
     domSnapshot: snapshot,
+    domSnapshotGeneration: state.domSnapshotGeneration + 1,
     selectedElementId: snapshot.root?.id ?? null
-  });
+  }));
 }
 
 export type { ElementSnapshot };

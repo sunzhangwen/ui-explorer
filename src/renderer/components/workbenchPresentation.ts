@@ -5,7 +5,13 @@ import type {
   ElementSnapshot,
   SnapshotDiagnostic
 } from "../../shared/ipc.js";
-import type { SelectorLayer } from "../../shared/selector.js";
+import {
+  buildSelectorExports,
+  buildUnavailableContextExports,
+  type SelectorCandidate,
+  type SelectorExports,
+  type SelectorLayer
+} from "../../shared/selector.js";
 import type { MessageKey } from "../i18n/messages.js";
 
 const SELECTOR_LAYER_MESSAGE_KEYS = {
@@ -93,8 +99,26 @@ export function getVisibilityMessageKey(visible: boolean | undefined): MessageKe
   return visible === undefined ? null : visible ? "properties.visible" : "properties.hidden";
 }
 
+export function buildWorkbenchExports(
+  selectedElement: ElementSnapshot | null,
+  selectedCandidate: SelectorCandidate | null
+): SelectorExports | null {
+  if (selectedElement?.diagnostic) {
+    return buildUnavailableContextExports(selectedElement);
+  }
+  return selectedCandidate ? buildSelectorExports(selectedCandidate) : null;
+}
+
 function getTreeNodeSearchText(node: ElementSnapshot): string {
-  return [node.nodeName, node.tagName ?? "", node.text ?? "", node.role ?? "", formatElementAttributes(node)]
+  return [
+    node.nodeName,
+    node.tagName ?? "",
+    node.text ?? "",
+    node.role ?? "",
+    formatElementAttributes(node),
+    node.diagnostic?.code ?? "",
+    node.diagnostic?.detail ?? ""
+  ]
     .join(" ")
     .toLowerCase();
 }

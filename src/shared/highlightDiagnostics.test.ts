@@ -1,7 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import type { DomSnapshotResult, ElementSnapshot, HighlightResult, SnapshotDiagnostic } from "./ipc.js";
-import { mergeHighlightResult } from "./highlightDiagnostics.js";
+import {
+  captureHighlightRequest,
+  mergeCurrentHighlightResult,
+  mergeHighlightResult
+} from "./highlightDiagnostics.js";
 
 const detachedDiagnostic: SnapshotDiagnostic & { code: "detached-context" } = {
   code: "detached-context",
@@ -96,4 +100,31 @@ test("statuses for nodes absent from the current snapshot preserve the snapshot 
   };
 
   assert.equal(mergeHighlightResult(snapshot, result), snapshot);
+});
+
+test("a highlight response is merged only into the snapshot generation that issued it", () => {
+  const original = createSnapshot([createNode("n-1")]);
+  const request = captureHighlightRequest(original, "target-a", 3);
+  const detachedResult: HighlightResult = {
+    targets: [{ elementId: "n-1", status: "detached", diagnostic: detachedDiagnostic }]
+  };
+
+  const current = createSnapshot([createNode("n-1")]);
+  current.capturedAt = "2026-07-23T00:00:01.000Z";
+  assert.equal(mergeCurrentHighlightResult(current, "target-a", 4, request, detachedResult), current);
+  assert.equal(current.root?.children[0]?.diagnostic, undefined);
+
+  const sameTimestampRefresh = createSnapshot([createNode("n-1")]);
+  assert.equal(
+    mergeCurrentHighlightResult(sameTimestampRefresh, "target-a", 4, request, detachedResult),
+    sameTimestampRefresh
+  );
+  assert.equal(sameTimestampRefresh.root?.children[0]?.diagnostic, undefined);
+
+  const switchedTarget = createSnapshot([createNode("n-1")]);
+  assert.equal(mergeCurrentHighlightResult(switchedTarget, "target-b", 3, request, detachedResult), switchedTarget);
+  assert.equal(switchedTarget.root?.children[0]?.diagnostic, undefined);
+
+  const merged = mergeCurrentHighlightResult(original, "target-a", 3, request, detachedResult);
+  assert.deepEqual(merged?.root?.children[0]?.diagnostic, detachedDiagnostic);
 });

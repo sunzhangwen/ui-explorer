@@ -34,8 +34,6 @@ import { findElementSnapshot, flattenElementSnapshot, formatElementAttributes } 
 import type { ElementSnapshot, SnapshotDiagnostic } from "../../shared/ipc";
 import {
   applySelectorEdit,
-  buildSelectorExports,
-  buildUnavailableContextExports,
   generateSelectorCandidates,
   type SelectorCandidate,
   type SelectorEdit,
@@ -46,6 +44,7 @@ import { useI18n } from "../i18n/I18nProvider";
 import type { MessageKey } from "../i18n/messages";
 import { useAppStore } from "../store/useAppStore";
 import {
+  buildWorkbenchExports,
   findTreeSearchMatches,
   getContextPathLabels,
   getDiagnosticPresentation,
@@ -152,16 +151,23 @@ export function WorkbenchLayout(): JSX.Element {
   );
   const activeCandidateId = selectedCandidateId ?? selectorCandidates[0]?.id ?? null;
   const selectedCandidate = useMemo(
-    () => (activeCandidateId ? selectorDrafts[activeCandidateId] ?? selectorCandidates.find((candidate) => candidate.id === activeCandidateId) ?? null : null),
-    [activeCandidateId, selectorCandidates, selectorDrafts]
+    () => {
+      if (selectedElement?.diagnostic || !activeCandidateId) {
+        return null;
+      }
+      const candidate = selectorCandidates.find((item) => item.id === activeCandidateId);
+      if (!candidate) {
+        return null;
+      }
+      const draft = selectorDrafts[activeCandidateId];
+      return draft?.layers.some((layer) => layer.kind === "target" && layer.nodeId === selectedElement?.id)
+        ? draft
+        : candidate;
+    },
+    [activeCandidateId, selectedElement, selectorCandidates, selectorDrafts]
   );
   const selectorExports = useMemo(
-    () =>
-      selectedCandidate
-        ? buildSelectorExports(selectedCandidate)
-        : selectedElement?.diagnostic
-          ? buildUnavailableContextExports(selectedElement)
-          : null,
+    () => buildWorkbenchExports(selectedElement, selectedCandidate),
     [selectedCandidate, selectedElement]
   );
   const previewSnippet = selectorExports?.[exportFormat] ?? "";

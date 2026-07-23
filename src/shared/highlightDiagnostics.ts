@@ -6,6 +6,59 @@ import type {
   SnapshotDiagnostic
 } from "./ipc.js";
 
+export type HighlightRequestIdentity = {
+  capturedAt: string;
+  rootId: string | null;
+  targetId: string | null;
+  generation: number;
+};
+
+export function captureHighlightRequest(
+  snapshot: DomSnapshotResult | null,
+  targetId: string | null,
+  generation: number
+): HighlightRequestIdentity | null {
+  if (!snapshot) {
+    return null;
+  }
+
+  return {
+    capturedAt: snapshot.capturedAt,
+    rootId: snapshot.root?.id ?? null,
+    targetId,
+    generation
+  };
+}
+
+export function isHighlightRequestCurrent(
+  snapshot: DomSnapshotResult | null,
+  targetId: string | null,
+  generation: number,
+  request: HighlightRequestIdentity | null
+): boolean {
+  return (
+    snapshot !== null &&
+    request !== null &&
+    snapshot.capturedAt === request.capturedAt &&
+    (snapshot.root?.id ?? null) === request.rootId &&
+    targetId === request.targetId &&
+    generation === request.generation
+  );
+}
+
+export function mergeCurrentHighlightResult(
+  snapshot: DomSnapshotResult | null,
+  targetId: string | null,
+  generation: number,
+  request: HighlightRequestIdentity | null,
+  result: HighlightResult
+): DomSnapshotResult | null {
+  if (!snapshot || !isHighlightRequestCurrent(snapshot, targetId, generation, request)) {
+    return snapshot;
+  }
+  return mergeHighlightResult(snapshot, result);
+}
+
 export function mergeHighlightResult(snapshot: DomSnapshotResult, result: HighlightResult): DomSnapshotResult {
   if (!snapshot.root || result.targets.length === 0) {
     return snapshot;

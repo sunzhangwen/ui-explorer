@@ -201,6 +201,13 @@ export const HIGHLIGHT_SCRIPT = `(() => {
       detail
     }
   });
+  const belongsToRoot = (node, root) => {
+    if (!node || !root || typeof node.getRootNode !== "function") {
+      return false;
+    }
+    const rootDocument = root.nodeType === Node.DOCUMENT_NODE ? root : root.ownerDocument;
+    return node.getRootNode() === root && node.ownerDocument === rootDocument;
+  };
   const detachedDetail = (target, contexts) => {
     if (!target || target.nodeType !== Node.ELEMENT_NODE) {
       return "Captured element is no longer available.";
@@ -208,10 +215,14 @@ export const HIGHLIGHT_SCRIPT = `(() => {
     if (!target.isConnected) {
       return "Captured element is disconnected.";
     }
+    let previousRoot = document;
     for (const context of contexts) {
       try {
         if (!context.host?.isConnected) {
           return "Captured " + context.kind + " host is detached.";
+        }
+        if (!belongsToRoot(context.host, previousRoot)) {
+          return "Captured " + context.kind + " host no longer belongs to its captured root.";
         }
         if (context.kind === "frame" && context.host.contentDocument !== context.root) {
           return "Captured frame document was replaced or is unavailable.";
@@ -222,9 +233,13 @@ export const HIGHLIGHT_SCRIPT = `(() => {
         ) {
           return "Captured shadow root was replaced or is unavailable.";
         }
+        previousRoot = context.root;
       } catch {
         return "Captured " + context.kind + " context is no longer accessible.";
       }
+    }
+    if (!belongsToRoot(target, previousRoot)) {
+      return "Captured element no longer belongs to its captured root.";
     }
     return null;
   };

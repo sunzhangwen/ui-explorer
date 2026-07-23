@@ -1,8 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import type { ContextBoundary, ElementNodeKind, ElementSnapshot, SnapshotDiagnostic } from "../../shared/ipc.js";
-import type { SelectorLayer } from "../../shared/selector.js";
+import type { SelectorCandidate, SelectorLayer } from "../../shared/selector.js";
 import {
+  buildWorkbenchExports,
   findTreeSearchMatches,
   getContextPathLabels,
   getDiagnosticPresentation,
@@ -36,6 +37,28 @@ test("diagnostic nodes remain selectable and searchable for inspection", () => {
   assert.equal(isTreeNodeSelectable(diagnostic), true);
   assert.equal(isTreeNodeHighlightable(diagnostic), false);
   assert.deepEqual(findTreeSearchMatches([diagnostic], "diagnostic searchable"), [diagnostic]);
+});
+
+test("tree search indexes cross-origin and closed-shadow diagnostic codes and details", () => {
+  const crossOrigin = createNode("diagnostic", "cross-origin");
+  crossOrigin.text = "";
+  crossOrigin.diagnostic = {
+    code: "cross-origin-frame",
+    messageKey: "snapshot.diagnostic.crossOriginFrame",
+    detail: "Payment provider frame is blocked"
+  };
+  const closedShadow = createNode("element", "closed-shadow");
+  closedShadow.text = "";
+  closedShadow.diagnostic = {
+    code: "closed-shadow-root",
+    messageKey: "snapshot.diagnostic.closedShadowRoot",
+    detail: "Account widget internals are unavailable"
+  };
+
+  assert.deepEqual(findTreeSearchMatches([crossOrigin, closedShadow], "cross-origin-frame"), [crossOrigin]);
+  assert.deepEqual(findTreeSearchMatches([crossOrigin, closedShadow], "payment provider"), [crossOrigin]);
+  assert.deepEqual(findTreeSearchMatches([crossOrigin, closedShadow], "closed-shadow-root"), [closedShadow]);
+  assert.deepEqual(findTreeSearchMatches([crossOrigin, closedShadow], "widget internals"), [closedShadow]);
 });
 
 test("page, frame, shadow, and element nodes remain selectable and searchable", () => {
@@ -143,4 +166,50 @@ test("visibility presentation keeps unknown boundary visibility distinct from hi
   assert.equal(getVisibilityMessageKey(true), "properties.visible");
   assert.equal(getVisibilityMessageKey(false), "properties.hidden");
   assert.equal(getVisibilityMessageKey(undefined), null);
+});
+
+test("diagnostic export takes priority over a selector draft from the previously selected target", () => {
+  const diagnostic = createNode("diagnostic", "closed-shadow");
+  diagnostic.diagnostic = {
+    code: "closed-shadow-root",
+    messageKey: "snapshot.diagnostic.closedShadowRoot",
+    detail: "Closed Shadow Root content is not accessible"
+  };
+  const staleCandidate: SelectorCandidate = {
+    id: "css",
+    type: "css",
+    label: "CSS",
+    selector: "button",
+    layers: [
+      {
+        id: "old-target",
+        nodeId: "old-target",
+        kind: "target",
+        tagName: "button",
+        enabled: true,
+        tagEnabled: true,
+        attributes: []
+      }
+    ],
+    score: {
+      unique: 40,
+      stability: 20,
+      readability: 10,
+      total: 70,
+      risks: []
+    },
+    validation: {
+      status: "unique",
+      matchCount: 1,
+      unique: true,
+      visible: true,
+      targetConsistent: true,
+      matchedElementIds: ["old-target"],
+      diagnostics: []
+    }
+  };
+
+  const exports = buildWorkbenchExports(diagnostic, staleCandidate);
+  assert.match(exports?.selenium ?? "", /\[closed-shadow-root\]/);
+  assert.doesNotMatch(exports?.selenium ?? "", /\.click\(\)/);
 });
