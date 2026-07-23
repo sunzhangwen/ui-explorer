@@ -209,6 +209,30 @@ ${seleniumStatements.join("\n")}
   };
 }
 
+export function buildUnavailableContextExports(node: ElementSnapshot): SelectorExports {
+  if (!node.diagnostic) {
+    throw new Error("Unavailable context exports require a diagnostic snapshot node.");
+  }
+
+  const json = JSON.stringify(
+    {
+      type: "unavailable-context",
+      nodeId: node.id,
+      context: node.context ?? [],
+      diagnostic: node.diagnostic
+    },
+    null,
+    2
+  );
+  const diagnostics = [node.diagnostic];
+
+  return {
+    json,
+    playwright: formatUnavailableExport("//", diagnostics),
+    selenium: formatUnavailableExport("#", diagnostics)
+  };
+}
+
 function buildPlaywrightLocator(layers: SelectorLayer[]): string {
   let locator = "page";
   for (const layer of layers) {

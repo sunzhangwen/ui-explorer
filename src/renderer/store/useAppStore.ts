@@ -1,5 +1,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import { findElementSnapshot } from "../../shared/domSnapshot";
+import { mergeHighlightResult } from "../../shared/highlightDiagnostics";
 import {
   TEST_PAGES,
   type AppInfo,
@@ -13,6 +15,7 @@ import {
   type TestPage,
   type ThemeName
 } from "../../shared/ipc";
+import { isTreeNodeHighlightable } from "../components/workbenchPresentation";
 
 type PanelSizes = {
   left: number;
@@ -165,8 +168,19 @@ export const useAppStore = create<AppStore>()(
       },
       selectElement: async (elementId) => {
         set({ selectedElementId: elementId });
+        const selectedElement = findElementSnapshot(get().domSnapshot?.root ?? null, elementId);
+        if (!selectedElement || !isTreeNodeHighlightable(selectedElement)) {
+          return;
+        }
         try {
-          await getApi().highlightElement(elementId);
+          const result = await getApi().highlightElement(elementId);
+          set((state) => {
+            if (!state.domSnapshot) {
+              return state;
+            }
+            const domSnapshot = mergeHighlightResult(state.domSnapshot, result);
+            return domSnapshot === state.domSnapshot ? state : { domSnapshot };
+          });
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
           const currentConnection = get().browserConnection;
@@ -176,7 +190,14 @@ export const useAppStore = create<AppStore>()(
       },
       highlightElements: async (elementIds) => {
         try {
-          await getApi().highlightElements(elementIds);
+          const result = await getApi().highlightElements(elementIds);
+          set((state) => {
+            if (!state.domSnapshot) {
+              return state;
+            }
+            const domSnapshot = mergeHighlightResult(state.domSnapshot, result);
+            return domSnapshot === state.domSnapshot ? state : { domSnapshot };
+          });
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
           const currentConnection = get().browserConnection;
@@ -264,8 +285,8 @@ function getApi(): IpcApi {
     listBrowserTargets: async () => [],
     selectBrowserTarget: async () => emptySnapshot(),
     getDomSnapshot: async () => emptySnapshot(),
-    highlightElement: async () => undefined,
-    highlightElements: async () => undefined,
+    highlightElement: async () => ({ targets: [] }),
+    highlightElements: async () => ({ targets: [] }),
     setElementPickerEnabled: async () => undefined,
     getPickedElementId: async () => null
   };

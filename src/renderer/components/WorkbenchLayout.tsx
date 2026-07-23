@@ -31,10 +31,11 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { PointerEvent, ReactNode } from "react";
 import { findElementSnapshot, flattenElementSnapshot, formatElementAttributes } from "../../shared/domSnapshot";
-import type { ElementSnapshot } from "../../shared/ipc";
+import type { ElementSnapshot, SnapshotDiagnostic } from "../../shared/ipc";
 import {
   applySelectorEdit,
   buildSelectorExports,
+  buildUnavailableContextExports,
   generateSelectorCandidates,
   type SelectorCandidate,
   type SelectorEdit,
@@ -49,6 +50,8 @@ import {
   getContextPathLabels,
   getDiagnosticPresentation,
   getSelectorLayerMessageKey,
+  getTreeNodeBadgeMessageKey,
+  getTreeNodePresentationKind,
   getVisibilityMessageKey,
   isTreeNodeSelectable
 } from "./workbenchPresentation";
@@ -64,31 +67,12 @@ function selectorLayerLabel(kind: SelectorLayer["kind"], t: (key: MessageKey) =>
 }
 
 function TreeNodeIcon({ node }: { node: ElementSnapshot }): JSX.Element {
-  if (node.kind === "page") return <Globe2 size={13} />;
-  if (node.kind === "frame") return <PanelRight size={13} />;
-  if (node.kind === "shadow") return <Layers3 size={13} />;
-  if (node.kind === "diagnostic") return <ShieldAlert size={13} />;
+  const kind = getTreeNodePresentationKind(node);
+  if (kind === "page") return <Globe2 size={13} />;
+  if (kind === "frame") return <PanelRight size={13} />;
+  if (kind === "shadow") return <Layers3 size={13} />;
+  if (kind === "diagnostic") return <ShieldAlert size={13} />;
   return <Box size={13} />;
-}
-
-function treeNodeBadgeKey(node: ElementSnapshot): MessageKey | null {
-  const kind = node.kind ?? "element";
-  switch (kind) {
-    case "page":
-      return "tree.badge.page";
-    case "frame":
-      return "tree.badge.frame";
-    case "shadow":
-      return "tree.badge.shadow";
-    case "diagnostic":
-      return "tree.badge.limit";
-    case "element":
-      return null;
-    default: {
-      const exhaustiveKind: never = kind;
-      throw new Error(`Unhandled tree node kind: ${exhaustiveKind}`);
-    }
-  }
 }
 
 export function WorkbenchLayout(): JSX.Element {
@@ -171,7 +155,15 @@ export function WorkbenchLayout(): JSX.Element {
     () => (activeCandidateId ? selectorDrafts[activeCandidateId] ?? selectorCandidates.find((candidate) => candidate.id === activeCandidateId) ?? null : null),
     [activeCandidateId, selectorCandidates, selectorDrafts]
   );
-  const selectorExports = useMemo(() => (selectedCandidate ? buildSelectorExports(selectedCandidate) : null), [selectedCandidate]);
+  const selectorExports = useMemo(
+    () =>
+      selectedCandidate
+        ? buildSelectorExports(selectedCandidate)
+        : selectedElement?.diagnostic
+          ? buildUnavailableContextExports(selectedElement)
+          : null,
+    [selectedCandidate, selectedElement]
+  );
   const previewSnippet = selectorExports?.[exportFormat] ?? "";
 
   const revealElement = (elementId: string) => {
@@ -353,11 +345,16 @@ export function WorkbenchLayout(): JSX.Element {
   const isInspectingTarget = browserConnection.state === "connected" && Boolean(selectedTarget);
   const diagnosticsSummary = `${ipcStatus.state === "ready" ? ipcStatus.message : ipcStatus.state} / ${domSnapshot?.nodeCount ?? 0} ${t("tree.nodes")}`;
   const snapshotSummary = selectedElement ? `${selectedElement.tagName ?? selectedElement.nodeName} / ${selectedElement.text || "-"}` : "-";
-  const elementSummary = selectedElement ? `${selectedElement.tagName ?? selectedElement.nodeName} / ${selectedElement.visible ? t("properties.visible") : t("properties.hidden")}` : "-";
+  const selectedVisibilityKey = getVisibilityMessageKey(selectedElement?.visible);
+  const elementSummary = selectedElement
+    ? `${selectedElement.tagName ?? selectedElement.nodeName} / ${selectedVisibilityKey ? t(selectedVisibilityKey) : "-"}`
+    : "-";
   const selectorSummary = selectedCandidate
     ? `${selectedCandidate.validation.matchCount} ${t("selector.matchCount")} / ${selectedCandidate.score.total}`
-    : "-";
-  const exportSummary = selectedCandidate ? t(`selector.export.${exportFormat}`) : "-";
+    : selectedElement?.diagnostic
+      ? t(getDiagnosticPresentation(selectedElement.diagnostic).messageKey)
+      : "-";
+  const exportSummary = selectorExports ? t(`selector.export.${exportFormat}`) : "-";
   const selectedTargetSummary = selectedTarget?.title || selectedTarget?.url || "-";
   const selectedTestSummary = selectedPage ? t(selectedPage.titleKey) : "-";
 
@@ -627,6 +624,7 @@ export function WorkbenchLayout(): JSX.Element {
           >
             <SelectorPanel
               candidates={selectorCandidates}
+              diagnostic={selectedElement?.diagnostic}
               selectedCandidate={selectedCandidate}
               selectedCandidateId={activeCandidateId}
               drafts={selectorDrafts}
@@ -731,6 +729,7 @@ function CollapsibleSection({
 
 function SelectorPanel({
   candidates,
+  diagnostic,
   drafts,
   onEdit,
   onSelectCandidate,
@@ -738,6 +737,7 @@ function SelectorPanel({
   selectedCandidateId
 }: {
   candidates: SelectorCandidate[];
+  diagnostic?: SnapshotDiagnostic;
   drafts: Record<string, SelectorCandidate>;
   onEdit: (candidate: SelectorCandidate, edit: SelectorEdit) => void;
   onSelectCandidate: (id: string) => void;
@@ -747,6 +747,19 @@ function SelectorPanel({
   const { t } = useI18n();
 
   if (candidates.length === 0 || !selectedCandidate) {
+    if (diagnostic) {
+      const presentation = getDiagnosticPresentation(diagnostic);
+      return (
+        <section className="property-card context-diagnostic">
+          <ShieldAlert size={15} />
+          <div>
+            <h3>{t(presentation.messageKey)}</h3>
+            <p>{presentation.detail}</p>
+          </div>
+        </section>
+      );
+    }
+
     return <p className="empty-copy">{t("empty.selector")}</p>;
   }
 
@@ -957,7 +970,7 @@ function VirtualTree({
           const isSelectable = isTreeNodeSelectable(row);
           const isSelected = isSelectable && row.id === selectedElementId;
           const isSearchMatch = searchMatchIds.has(row.id);
-          const badgeKey = treeNodeBadgeKey(row);
+          const badgeKey = getTreeNodeBadgeMessageKey(row);
           const badgeKind = badgeKey?.replace("tree.badge.", "");
           const diagnosticPresentation = row.diagnostic ? getDiagnosticPresentation(row.diagnostic) : null;
           const detail = diagnosticPresentation
@@ -1000,7 +1013,11 @@ function VirtualTree({
                   {nodeContent}
                 </div>
               ) : (
-                <button type="button" className="tree-node-main" onClick={() => onSelect(row.id)}>
+                <button
+                  type="button"
+                  className={row.diagnostic ? "tree-node-main diagnostic" : "tree-node-main"}
+                  onClick={() => onSelect(row.id)}
+                >
                   {nodeContent}
                 </button>
               )}

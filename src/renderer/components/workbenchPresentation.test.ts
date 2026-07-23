@@ -7,15 +7,19 @@ import {
   getContextPathLabels,
   getDiagnosticPresentation,
   getSelectorLayerMessageKey,
+  getTreeNodeBadgeMessageKey,
+  getTreeNodePresentationKind,
   getVisibilityMessageKey,
+  isTreeNodeHighlightable,
   isTreeNodeSelectable
 } from "./workbenchPresentation.js";
 
 function createNode(kind: ElementNodeKind, id: string): ElementSnapshot {
+  const nodeType = kind === "frame" ? 9 : kind === "shadow" ? 11 : kind === "diagnostic" ? 8 : 1;
   return {
     id,
     depth: 0,
-    nodeType: 1,
+    nodeType,
     nodeName: kind === "element" ? "BUTTON" : kind.toUpperCase(),
     tagName: kind === "element" ? "button" : kind,
     text: `${kind} searchable`,
@@ -26,11 +30,12 @@ function createNode(kind: ElementNodeKind, id: string): ElementSnapshot {
   };
 }
 
-test("diagnostic nodes are neither selectable nor returned by tree search", () => {
+test("diagnostic nodes remain selectable and searchable for inspection", () => {
   const diagnostic = createNode("diagnostic", "diagnostic-node");
 
-  assert.equal(isTreeNodeSelectable(diagnostic), false);
-  assert.deepEqual(findTreeSearchMatches([diagnostic], "diagnostic searchable"), []);
+  assert.equal(isTreeNodeSelectable(diagnostic), true);
+  assert.equal(isTreeNodeHighlightable(diagnostic), false);
+  assert.deepEqual(findTreeSearchMatches([diagnostic], "diagnostic searchable"), [diagnostic]);
 });
 
 test("page, frame, shadow, and element nodes remain selectable and searchable", () => {
@@ -40,6 +45,11 @@ test("page, frame, shadow, and element nodes remain selectable and searchable", 
     assert.equal(isTreeNodeSelectable(node), true, `${node.kind} should be selectable`);
     assert.deepEqual(findTreeSearchMatches(nodes, `${node.kind} searchable`), [node]);
   }
+
+  assert.equal(isTreeNodeHighlightable(nodes[0]!), true, "page element should be highlightable");
+  assert.equal(isTreeNodeHighlightable(nodes[1]!), false, "frame document should not be highlightable");
+  assert.equal(isTreeNodeHighlightable(nodes[2]!), false, "shadow root should not be highlightable");
+  assert.equal(isTreeNodeHighlightable(nodes[3]!), true, "element should be highlightable");
 });
 
 test("context labels preserve boundary order within frame and shadow paths", () => {
@@ -101,6 +111,18 @@ test("diagnostic presentation exposes each localized key and captured detail", (
       detail: diagnostic.detail
     });
   }
+});
+
+test("a runtime diagnostic on an element takes precedence in tree presentation", () => {
+  const element = createNode("element", "detached-element");
+  element.diagnostic = {
+    code: "detached-context",
+    messageKey: "snapshot.diagnostic.detachedContext",
+    detail: "Captured element is disconnected."
+  };
+
+  assert.equal(getTreeNodePresentationKind(element), "diagnostic");
+  assert.equal(getTreeNodeBadgeMessageKey(element), "tree.badge.limit");
 });
 
 test("all selector layer kinds map to their localized message keys", () => {

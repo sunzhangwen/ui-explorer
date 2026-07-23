@@ -1,10 +1,100 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { runInNewContext } from "node:vm";
 import { ELEMENT_PICKER_SCRIPT, HIGHLIGHT_SCRIPT, SNAPSHOT_SCRIPT } from "./browserScripts.js";
+
+type FakeDocument = {
+  appended: unknown[];
+  querySelectorAll: () => unknown[];
+  createElement: () => {
+    setAttribute: () => void;
+    style: { cssText: string };
+    appendChild: (child: unknown) => void;
+    textContent?: string;
+  };
+  documentElement: {
+    appendChild: (node: unknown) => void;
+  };
+};
+
+type FakeElement = {
+  nodeType: number;
+  isConnected: boolean;
+  ownerDocument: FakeDocument;
+  getBoundingClientRect: () => { left: number; top: number; width: number; height: number };
+  contentDocument?: FakeDocument | null;
+  shadowRoot?: object | null;
+};
+
+type RuntimeContextIdentity =
+  | { kind: "frame"; host: FakeElement; root: FakeDocument }
+  | { kind: "shadow"; host: FakeElement; root: object };
+
+function createFakeDocument(): FakeDocument {
+  const appended: unknown[] = [];
+  return {
+    appended,
+    querySelectorAll: () => [],
+    createElement: () => ({
+      setAttribute: () => undefined,
+      style: { cssText: "" },
+      appendChild: () => undefined
+    }),
+    documentElement: {
+      appendChild: (node) => appended.push(node)
+    }
+  };
+}
+
+function createFakeElement(ownerDocument: FakeDocument, isConnected = true): FakeElement {
+  return {
+    nodeType: 1,
+    isConnected,
+    ownerDocument,
+    getBoundingClientRect: () => ({ left: 1, top: 2, width: 30, height: 40 })
+  };
+}
+
+function runHighlight(
+  elementIds: string[],
+  registry: Map<string, FakeElement>,
+  contextIdentities = new Map<string, RuntimeContextIdentity[]>(),
+  documents = new Set<FakeDocument>([createFakeDocument()])
+): {
+  targets: Array<{
+    elementId: string;
+    status: "highlighted" | "detached";
+    diagnostic?: { code: string; detail: string };
+  }>;
+} {
+  const topDocument = documents.values().next().value ?? createFakeDocument();
+  return runInNewContext(HIGHLIGHT_SCRIPT.replace("__ELEMENT_IDS__", JSON.stringify(elementIds)), {
+    Node: { ELEMENT_NODE: 1 },
+    document: topDocument,
+    window: {
+      __uiExplorerElements: registry,
+      __uiExplorerDocuments: documents,
+      __uiExplorerElementContexts: contextIdentities
+    }
+  }) as {
+    targets: Array<{
+      elementId: string;
+      status: "highlighted" | "detached";
+      diagnostic?: { code: string; detail: string };
+    }>;
+  };
+}
+
+function normalizeVmValue<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
+}
 
 test("snapshot script records frame and shadow context boundaries", () => {
   assert.match(SNAPSHOT_SCRIPT, /kind:\s*"frame"/);
   assert.match(SNAPSHOT_SCRIPT, /kind:\s*"shadow"/);
+  assert.match(SNAPSHOT_SCRIPT, /__uiExplorerElementContexts/);
+  assert.match(SNAPSHOT_SCRIPT, /contentDocument/);
+  assert.match(SNAPSHOT_SCRIPT, /shadowRoot/);
   assert.match(SNAPSHOT_SCRIPT, /cross-origin-frame/);
   assert.match(SNAPSHOT_SCRIPT, /closed-shadow-root/);
 });
@@ -20,4 +110,134 @@ test("picker installs listeners in every captured document", () => {
   assert.match(ELEMENT_PICKER_SCRIPT, /__uiExplorerDocuments/);
   assert.match(ELEMENT_PICKER_SCRIPT, /for\s*\(const doc of documents\)/);
   assert.match(ELEMENT_PICKER_SCRIPT, /install\(doc\)/);
+});
+
+test("highlight reports missing and disconnected registry targets as detached", () => {
+  const document = createFakeDocument();
+  const disconnected = createFakeElement(document, false);
+
+  const result = runHighlight(
+    ["missing", "disconnected"],
+    new Map([["disconnected", disconnected]]),
+    new Map(),
+    new Set([document])
+  );
+
+  assert.deepEqual(
+    normalizeVmValue(result.targets.map(({ elementId, status, diagnostic }) => ({
+      elementId,
+      status,
+      code: diagnostic?.code
+    }))),
+    [
+      { elementId: "missing", status: "detached", code: "detached-context" },
+      { elementId: "disconnected", status: "detached", code: "detached-context" }
+    ]
+  );
+});
+
+test("highlight detects a replaced frame document captured by the snapshot", () => {
+  const topDocument = createFakeDocument();
+  const capturedFrameDocument = createFakeDocument();
+  const replacementFrameDocument = createFakeDocument();
+  const frameHost = createFakeElement(topDocument);
+  frameHost.contentDocument = replacementFrameDocument;
+  const target = createFakeElement(capturedFrameDocument);
+  const contexts = new Map<string, RuntimeContextIdentity[]>([
+    ["target", [{ kind: "frame", host: frameHost, root: capturedFrameDocument }]]
+  ]);
+
+  const result = runHighlight(
+    ["target"],
+    new Map([["target", target]]),
+    contexts,
+    new Set([topDocument, capturedFrameDocument])
+  );
+
+  assert.equal(result.targets[0]?.status, "detached");
+  assert.match(result.targets[0]?.diagnostic?.detail ?? "", /frame/i);
+});
+
+test("highlight reports a frame that becomes runtime-inaccessible as detached", () => {
+  const topDocument = createFakeDocument();
+  const capturedFrameDocument = createFakeDocument();
+  const frameHost = createFakeElement(topDocument);
+  Object.defineProperty(frameHost, "contentDocument", {
+    get: () => {
+      throw new Error("Blocked a frame with origin");
+    }
+  });
+  const target = createFakeElement(capturedFrameDocument);
+  const contexts = new Map<string, RuntimeContextIdentity[]>([
+    ["target", [{ kind: "frame", host: frameHost, root: capturedFrameDocument }]]
+  ]);
+
+  const result = runHighlight(
+    ["target"],
+    new Map([["target", target]]),
+    contexts,
+    new Set([topDocument, capturedFrameDocument])
+  );
+
+  assert.equal(result.targets[0]?.status, "detached");
+  assert.match(result.targets[0]?.diagnostic?.detail ?? "", /frame/i);
+});
+
+test("highlight detects detached shadow hosts and replaced shadow roots", () => {
+  const document = createFakeDocument();
+  const capturedRoot = {};
+  const detachedHost = createFakeElement(document, false);
+  detachedHost.shadowRoot = capturedRoot;
+  const replacedHost = createFakeElement(document);
+  replacedHost.shadowRoot = {};
+  const detachedTarget = createFakeElement(document);
+  const replacedTarget = createFakeElement(document);
+  const contexts = new Map<string, RuntimeContextIdentity[]>([
+    ["detached-target", [{ kind: "shadow", host: detachedHost, root: capturedRoot }]],
+    ["replaced-target", [{ kind: "shadow", host: replacedHost, root: capturedRoot }]]
+  ]);
+
+  const result = runHighlight(
+    ["detached-target", "replaced-target"],
+    new Map([
+      ["detached-target", detachedTarget],
+      ["replaced-target", replacedTarget]
+    ]),
+    contexts,
+    new Set([document])
+  );
+
+  assert.deepEqual(normalizeVmValue(result.targets.map((target) => target.status)), ["detached", "detached"]);
+  assert.match(result.targets[0]?.diagnostic?.detail ?? "", /shadow/i);
+  assert.match(result.targets[1]?.diagnostic?.detail ?? "", /shadow/i);
+});
+
+test("highlight accepts attached nested frame and shadow identities", () => {
+  const topDocument = createFakeDocument();
+  const frameDocument = createFakeDocument();
+  const frameHost = createFakeElement(topDocument);
+  frameHost.contentDocument = frameDocument;
+  const shadowRoot = {};
+  const shadowHost = createFakeElement(frameDocument);
+  shadowHost.shadowRoot = shadowRoot;
+  const target = createFakeElement(frameDocument);
+  const contexts = new Map<string, RuntimeContextIdentity[]>([
+    [
+      "target",
+      [
+        { kind: "frame", host: frameHost, root: frameDocument },
+        { kind: "shadow", host: shadowHost, root: shadowRoot }
+      ]
+    ]
+  ]);
+
+  const result = runHighlight(
+    ["target"],
+    new Map([["target", target]]),
+    contexts,
+    new Set([topDocument, frameDocument])
+  );
+
+  assert.deepEqual(normalizeVmValue(result.targets), [{ elementId: "target", status: "highlighted" }]);
+  assert.equal(frameDocument.appended.length, 1);
 });

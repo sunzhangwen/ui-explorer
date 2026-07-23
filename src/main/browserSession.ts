@@ -3,7 +3,13 @@ import net from "node:net";
 import tls from "node:tls";
 import { getDefaultBrowserTargetId, toBrowserTargets } from "../shared/browserTargets.js";
 import { normalizeDebugEndpoint } from "../shared/domSnapshot.js";
-import type { BrowserConnectionDiagnostics, BrowserConnectionInfo, BrowserTarget, DomSnapshotResult } from "../shared/ipc.js";
+import type {
+  BrowserConnectionDiagnostics,
+  BrowserConnectionInfo,
+  BrowserTarget,
+  DomSnapshotResult,
+  HighlightResult
+} from "../shared/ipc.js";
 import { ELEMENT_PICKER_SCRIPT, GET_PICKED_ELEMENT_SCRIPT, HIGHLIGHT_SCRIPT, SNAPSHOT_SCRIPT } from "./browserScripts.js";
 import { encodeClientCloseFrame, encodeClientTextFrame, extractServerTextFrames } from "./webSocketFrames.js";
 
@@ -221,12 +227,12 @@ export class BrowserSession {
     return result;
   }
 
-  async highlightElement(elementId: string): Promise<void> {
-    await this.highlightElements([elementId]);
+  async highlightElement(elementId: string): Promise<HighlightResult> {
+    return this.highlightElements([elementId]);
   }
 
-  async highlightElements(elementIds: string[]): Promise<void> {
-    await this.evaluate(HIGHLIGHT_SCRIPT.replace("__ELEMENT_IDS__", JSON.stringify(elementIds)));
+  async highlightElements(elementIds: string[]): Promise<HighlightResult> {
+    return this.evaluate<HighlightResult>(HIGHLIGHT_SCRIPT.replace("__ELEMENT_IDS__", JSON.stringify(elementIds)));
   }
 
   async setElementPickerEnabled(enabled: boolean): Promise<void> {

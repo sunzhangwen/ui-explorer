@@ -1,6 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { applySelectorEdit, buildSelectorExports, generateSelectorCandidates } from "./selector.js";
+import {
+  applySelectorEdit,
+  buildSelectorExports,
+  buildUnavailableContextExports,
+  generateSelectorCandidates
+} from "./selector.js";
 import type { ElementSnapshot } from "./ipc.js";
 
 const makeNode = (overrides: Partial<ElementSnapshot>): ElementSnapshot => ({
@@ -1040,6 +1045,79 @@ test("inaccessible context diagnostics emit comments instead of runnable exports
   assert.doesNotMatch(output.playwright, /const element =/);
   assert.match(output.selenium, /cross-origin-frame/);
   assert.doesNotMatch(output.selenium, /find_element/);
+});
+
+test("diagnostic leaves have no selector candidates but provide non-runnable context exports", () => {
+  const diagnostic = makeNode({
+    id: "cross-origin-diagnostic",
+    nodeType: 8,
+    nodeName: "#context-unavailable",
+    tagName: undefined,
+    kind: "diagnostic",
+    context: [frameBoundary],
+    diagnostic: {
+      code: "cross-origin-frame",
+      messageKey: "snapshot.crossOriginFrame",
+      detail: "Frame content is not accessible"
+    }
+  });
+
+  assert.deepEqual(generateSelectorCandidates(diagnostic, diagnostic.id), []);
+
+  const output = buildUnavailableContextExports(diagnostic);
+  const json = JSON.parse(output.json) as {
+    context: unknown;
+    diagnostic: unknown;
+  };
+
+  assert.deepEqual(json.context, diagnostic.context);
+  assert.deepEqual(json.diagnostic, diagnostic.diagnostic);
+  assert.match(output.playwright, /cross-origin-frame/);
+  assert.doesNotMatch(output.playwright, /locator|click/);
+  assert.match(output.selenium, /cross-origin-frame/);
+  assert.doesNotMatch(output.selenium, /find_element|click/);
+});
+
+test("an accessible host keeps runnable exports when its child is diagnostic", () => {
+  const diagnostic = makeNode({
+    id: "closed-shadow-diagnostic",
+    parentId: "shadow-host",
+    depth: 2,
+    nodeType: 8,
+    nodeName: "#context-unavailable",
+    tagName: undefined,
+    kind: "diagnostic",
+    context: [shadowBoundary],
+    diagnostic: {
+      code: "closed-shadow-root",
+      messageKey: "snapshot.closedShadowRoot",
+      detail: "Closed Shadow Root content is not accessible"
+    }
+  });
+  const host = makeNode({
+    id: "shadow-host",
+    parentId: "page",
+    depth: 1,
+    nodeName: "SEARCH-WIDGET",
+    tagName: "search-widget",
+    attributes: { "data-testid": "search-widget" },
+    childIds: [diagnostic.id],
+    children: [diagnostic]
+  });
+  const root = makeNode({
+    id: "page",
+    nodeName: "HTML",
+    tagName: "html",
+    kind: "page",
+    childIds: [host.id],
+    children: [host]
+  });
+  const candidate = generateSelectorCandidates(root, host.id).find((item) => item.type === "css");
+  assert.ok(candidate);
+
+  const output = buildSelectorExports(candidate);
+  assert.match(output.playwright, /const element =/);
+  assert.match(output.selenium, /find_element/);
 });
 
 test("snapshot boundary diagnostics propagate into blocked context exports", () => {

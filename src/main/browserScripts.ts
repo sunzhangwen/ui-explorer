@@ -1,6 +1,7 @@
 export const SNAPSHOT_SCRIPT = `(() => {
   const registry = new Map();
   const elementIds = new WeakMap();
+  const elementContexts = new Map();
   const documents = new Set([document]);
   let sequence = 0;
 
@@ -76,10 +77,11 @@ export const SNAPSHOT_SCRIPT = `(() => {
     };
   };
 
-  const walk = (node, depth, parentId, context, kind = "element") => {
+  const walk = (node, depth, parentId, context, kind = "element", runtimeContexts = []) => {
     const id = "n-" + (++sequence);
     registry.set(id, node);
     elementIds.set(node, id);
+    elementContexts.set(id, runtimeContexts.slice());
     if (node.nodeType === Node.DOCUMENT_NODE) {
       documents.add(node);
     } else if (node.ownerDocument) {
@@ -108,7 +110,7 @@ export const SNAPSHOT_SCRIPT = `(() => {
 
     const sourceChildren = Array.from(node.childNodes || []).filter((child) => child.nodeType === Node.ELEMENT_NODE);
     for (const child of sourceChildren) {
-      children.push(walk(child, depth + 1, id, context));
+      children.push(walk(child, depth + 1, id, context, "element", runtimeContexts));
     }
 
     if (isFrame(node)) {
@@ -117,7 +119,14 @@ export const SNAPSHOT_SCRIPT = `(() => {
         const frameDocument = node.contentDocument;
         if (frameDocument) {
           documents.add(frameDocument);
-          children.push(walk(frameDocument, depth + 1, id, frameContext, "frame"));
+          children.push(walk(
+            frameDocument,
+            depth + 1,
+            id,
+            frameContext,
+            "frame",
+            [...runtimeContexts, { kind: "frame", host: node, root: frameDocument }]
+          ));
         } else {
           children.push(diagnosticNode(
             id,
@@ -142,7 +151,14 @@ export const SNAPSHOT_SCRIPT = `(() => {
 
     if (isElement(node) && node.shadowRoot) {
       const shadowContext = [...context, shadowBoundaryFor(node, id)];
-      children.push(walk(node.shadowRoot, depth + 1, id, shadowContext, "shadow"));
+      children.push(walk(
+        node.shadowRoot,
+        depth + 1,
+        id,
+        shadowContext,
+        "shadow",
+        [...runtimeContexts, { kind: "shadow", host: node, root: node.shadowRoot }]
+      ));
     }
 
     if (isElement(node) && node.hasAttribute("data-ui-explorer-closed-shadow")) {
@@ -164,6 +180,7 @@ export const SNAPSHOT_SCRIPT = `(() => {
   const root = document.documentElement ? walk(document.documentElement, 0, undefined, [], "page") : null;
   window.__uiExplorerElements = registry;
   window.__uiExplorerElementIds = elementIds;
+  window.__uiExplorerElementContexts = elementContexts;
   window.__uiExplorerDocuments = documents;
   window.__uiExplorerPickedElementId = null;
   return { root, capturedAt: new Date().toISOString(), nodeCount: sequence };
@@ -172,13 +189,53 @@ export const SNAPSHOT_SCRIPT = `(() => {
 export const HIGHLIGHT_SCRIPT = `(() => {
   const elementIds = __ELEMENT_IDS__;
   const registry = window.__uiExplorerElements;
+  const elementContexts = window.__uiExplorerElementContexts || new Map();
   const documents = window.__uiExplorerDocuments || new Set([document]);
+  const targets = [];
+  const detached = (elementId, detail) => ({
+    elementId,
+    status: "detached",
+    diagnostic: {
+      code: "detached-context",
+      messageKey: "snapshot.diagnostic.detachedContext",
+      detail
+    }
+  });
+  const detachedDetail = (target, contexts) => {
+    if (!target || target.nodeType !== Node.ELEMENT_NODE) {
+      return "Captured element is no longer available.";
+    }
+    if (!target.isConnected) {
+      return "Captured element is disconnected.";
+    }
+    for (const context of contexts) {
+      try {
+        if (!context.host?.isConnected) {
+          return "Captured " + context.kind + " host is detached.";
+        }
+        if (context.kind === "frame" && context.host.contentDocument !== context.root) {
+          return "Captured frame document was replaced or is unavailable.";
+        }
+        if (
+          context.kind === "shadow" &&
+          (context.host.shadowRoot !== context.root || (context.root.host && context.root.host !== context.host))
+        ) {
+          return "Captured shadow root was replaced or is unavailable.";
+        }
+      } catch {
+        return "Captured " + context.kind + " context is no longer accessible.";
+      }
+    }
+    return null;
+  };
   for (const doc of documents) {
     doc.querySelectorAll("[data-ui-explorer-highlight]").forEach((node) => node.remove());
   }
   elementIds.forEach((elementId, index) => {
     const target = registry?.get(elementId);
-    if (target?.nodeType !== Node.ELEMENT_NODE) {
+    const detail = detachedDetail(target, elementContexts.get(elementId) || []);
+    if (detail) {
+      targets.push(detached(elementId, detail));
       return;
     }
     const doc = target.ownerDocument;
@@ -215,8 +272,9 @@ export const HIGHLIGHT_SCRIPT = `(() => {
     ].join(";");
     overlay.appendChild(badge);
     doc.documentElement.appendChild(overlay);
+    targets.push({ elementId, status: "highlighted" });
   });
-  return true;
+  return { targets };
 })()`;
 
 export const ELEMENT_PICKER_SCRIPT = `(() => {

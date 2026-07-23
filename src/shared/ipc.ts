@@ -47,6 +47,21 @@ export type SnapshotDiagnostic = {
   detail: string;
 };
 
+export type HighlightTargetStatus =
+  | {
+      elementId: string;
+      status: "highlighted";
+    }
+  | {
+      elementId: string;
+      status: "detached";
+      diagnostic: SnapshotDiagnostic & { code: "detached-context" };
+    };
+
+export type HighlightResult = {
+  targets: HighlightTargetStatus[];
+};
+
 export type ElementSnapshot = {
   id: string;
   parentId?: string;
@@ -97,8 +112,8 @@ export type IpcApi = {
   listBrowserTargets: () => Promise<BrowserTarget[]>;
   selectBrowserTarget: (targetId: string) => Promise<DomSnapshotResult>;
   getDomSnapshot: () => Promise<DomSnapshotResult>;
-  highlightElement: (elementId: string) => Promise<void>;
-  highlightElements: (elementIds: string[]) => Promise<void>;
+  highlightElement: (elementId: string) => Promise<HighlightResult>;
+  highlightElements: (elementIds: string[]) => Promise<HighlightResult>;
   setElementPickerEnabled: (enabled: boolean) => Promise<void>;
   getPickedElementId: () => Promise<string | null>;
 };

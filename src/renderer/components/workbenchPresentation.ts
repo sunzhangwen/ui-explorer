@@ -1,5 +1,10 @@
 import { formatElementAttributes } from "../../shared/domSnapshot.js";
-import type { ContextBoundary, ElementSnapshot, SnapshotDiagnostic } from "../../shared/ipc.js";
+import type {
+  ContextBoundary,
+  ElementNodeKind,
+  ElementSnapshot,
+  SnapshotDiagnostic
+} from "../../shared/ipc.js";
 import type { SelectorLayer } from "../../shared/selector.js";
 import type { MessageKey } from "../i18n/messages.js";
 
@@ -22,7 +27,11 @@ export function getSelectorLayerMessageKey(kind: SelectorLayer["kind"]): Message
 }
 
 export function isTreeNodeSelectable(node: ElementSnapshot): boolean {
-  return node.kind !== "diagnostic";
+  return true;
+}
+
+export function isTreeNodeHighlightable(node: ElementSnapshot): boolean {
+  return node.nodeType === 1 && node.kind !== "diagnostic";
 }
 
 export function findTreeSearchMatches(rows: ElementSnapshot[], query: string): ElementSnapshot[] {
@@ -31,7 +40,7 @@ export function findTreeSearchMatches(rows: ElementSnapshot[], query: string): E
     return [];
   }
 
-  return rows.filter((row) => isTreeNodeSelectable(row) && getTreeNodeSearchText(row).includes(normalizedQuery));
+  return rows.filter((row) => getTreeNodeSearchText(row).includes(normalizedQuery));
 }
 
 export function getContextPathLabels(context: ContextBoundary[]): Record<ContextBoundary["kind"], string[]> {
@@ -54,6 +63,30 @@ export function getDiagnosticPresentation(
     messageKey: DIAGNOSTIC_MESSAGE_KEYS[diagnostic.code],
     detail: diagnostic.detail
   };
+}
+
+export function getTreeNodePresentationKind(node: ElementSnapshot): ElementNodeKind {
+  return node.diagnostic ? "diagnostic" : (node.kind ?? "element");
+}
+
+export function getTreeNodeBadgeMessageKey(node: ElementSnapshot): MessageKey | null {
+  const kind = getTreeNodePresentationKind(node);
+  switch (kind) {
+    case "page":
+      return "tree.badge.page";
+    case "frame":
+      return "tree.badge.frame";
+    case "shadow":
+      return "tree.badge.shadow";
+    case "diagnostic":
+      return "tree.badge.limit";
+    case "element":
+      return null;
+    default: {
+      const exhaustiveKind: never = kind;
+      throw new Error(`Unhandled tree node kind: ${exhaustiveKind}`);
+    }
+  }
 }
 
 export function getVisibilityMessageKey(visible: boolean | undefined): MessageKey | null {
