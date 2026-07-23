@@ -56,6 +56,10 @@ export function getDiagnosticPresentation(
   };
 }
 
+export function getVisibilityMessageKey(visible: boolean | undefined): MessageKey | null {
+  return visible === undefined ? null : visible ? "properties.visible" : "properties.hidden";
+}
+
 function getTreeNodeSearchText(node: ElementSnapshot): string {
   return [node.nodeName, node.tagName ?? "", node.text ?? "", node.role ?? "", formatElementAttributes(node)]
     .join(" ")

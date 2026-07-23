@@ -15,7 +15,7 @@ UI Explorer 是一个基于 Electron + React + TypeScript 的网页 UI 元素探
 - 支持启用/禁用上下文（frame、Shadow）及 Selector 的层级、标签和属性，支持手动编辑属性值；上下文层级变更会立即重新验证。
 - Selector 多匹配时可在目标页面编号高亮所有匹配元素。
 - 支持导出 JSON、Playwright TypeScript、Selenium Python 代码预览；导出会保留 frame 进入顺序并处理 open Shadow DOM 上下文。
-- 对跨域 frame、OOPIF、closed Shadow Root 和已脱离上下文显示限制诊断，避免将不可访问的内部元素当作可定位目标。
+- 对跨域 frame、OOPIF、测试页明确标记的 closed Shadow Root 和已脱离上下文显示限制诊断，避免将不可访问的内部元素当作可定位目标。
 - 提供中英文 i18n、深浅主题和普通/紧凑密度界面。
 
 ## 技术栈
@@ -148,7 +148,7 @@ src/
 
 ## 上下文范围与限制
 
-Phase 3 支持遍历同源嵌套 iframe，以及进入 open Shadow DOM。跨域 iframe 与浏览器以 OOPIF（Out-of-Process iframe）形式承载的 frame 内容不在本阶段的遍历范围内：应用会显示不可访问的上下文诊断，而不会报告其内部的可选元素。该能力明确推迟到 Phase 8。closed Shadow Root 同样只显示限制诊断，无法捕获或定位其内部节点。
+Phase 3 支持遍历同源嵌套 iframe，以及进入 open Shadow DOM。跨域 iframe 与浏览器以 OOPIF（Out-of-Process iframe）形式承载的 frame 内容不在本阶段的遍历范围内：应用会显示不可访问的上下文诊断，而不会报告其内部的可选元素。该能力明确推迟到 Phase 8。对于带有测试标记、可确认 closed mode 的宿主，应用只显示限制诊断，无法捕获或定位其内部节点；普通页面若无法可靠识别 closed Shadow Root，则不会猜测或误报。
 
 ## 开发状态
 

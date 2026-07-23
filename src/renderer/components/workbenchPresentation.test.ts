@@ -7,6 +7,7 @@ import {
   getContextPathLabels,
   getDiagnosticPresentation,
   getSelectorLayerMessageKey,
+  getVisibilityMessageKey,
   isTreeNodeSelectable
 } from "./workbenchPresentation.js";
 
@@ -114,4 +115,10 @@ test("all selector layer kinds map to their localized message keys", () => {
   for (const kind of Object.keys(expected) as SelectorLayer["kind"][]) {
     assert.equal(getSelectorLayerMessageKey(kind), expected[kind]);
   }
+});
+
+test("visibility presentation keeps unknown boundary visibility distinct from hidden elements", () => {
+  assert.equal(getVisibilityMessageKey(true), "properties.visible");
+  assert.equal(getVisibilityMessageKey(false), "properties.hidden");
+  assert.equal(getVisibilityMessageKey(undefined), null);
 });

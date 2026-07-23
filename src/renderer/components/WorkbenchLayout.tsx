@@ -49,6 +49,7 @@ import {
   getContextPathLabels,
   getDiagnosticPresentation,
   getSelectorLayerMessageKey,
+  getVisibilityMessageKey,
   isTreeNodeSelectable
 } from "./workbenchPresentation";
 
@@ -1025,6 +1026,7 @@ function ElementDetails({ element }: { element: ElementSnapshot | null }): JSX.E
   const context = element.context ?? [];
   const contextPaths = getContextPathLabels(context);
   const diagnosticPresentation = element.diagnostic ? getDiagnosticPresentation(element.diagnostic) : null;
+  const visibilityMessageKey = getVisibilityMessageKey(element.visible);
 
   return (
     <div className="property-stack">
@@ -1038,7 +1040,10 @@ function ElementDetails({ element }: { element: ElementSnapshot | null }): JSX.E
       <section className="property-card">
         <h3>{t("properties.accessibility")}</h3>
         <PropertyRow label={t("properties.role")} value={element.role || "-"} />
-        <PropertyRow label={t("properties.visible")} value={element.visible ? t("properties.visible") : t("properties.hidden")} />
+        <PropertyRow
+          label={t("properties.visible")}
+          value={visibilityMessageKey ? t(visibilityMessageKey) : "-"}
+        />
       </section>
       <section className="property-card">
         <h3>{t("properties.layout")}</h3>
