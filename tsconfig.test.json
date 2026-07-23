@@ -9,7 +9,9 @@
     "src/main/browserScripts.ts",
     "src/main/browserScripts.test.ts",
     "src/main/webSocketFrames.ts",
-    "src/main/webSocketFrames.test.ts"
+    "src/main/webSocketFrames.test.ts",
+    "src/renderer/components/workbenchPresentation.ts",
+    "src/renderer/components/workbenchPresentation.test.ts"
   ],
   "exclude": []
 }

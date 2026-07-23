@@ -15,6 +15,10 @@
   --font-size-md: 13px;
   --font-size-lg: 15px;
   --tree-row-height: 30px;
+  --tree-kind-badge-height: 14px;
+  --tree-kind-badge-radius: 4px;
+  --tree-kind-badge-font-size: 9px;
+  --property-label-width: 96px;
   --shadow-panel: 0 18px 38px rgb(0 0 0 / 0.2);
   --color-canvas: 246 247 244;
   --color-panel: 255 255 252;
@@ -546,15 +550,15 @@ select {
 .tree-kind-badge {
   display: inline-flex;
   align-items: center;
-  height: calc(var(--tree-row-height) - 16px);
-  min-height: 12px;
+  height: var(--tree-kind-badge-height);
+  min-height: var(--space-3);
   padding: 0 var(--space-1);
   border: 1px solid rgb(var(--color-border));
-  border-radius: calc(var(--radius-ui) - 3px);
+  border-radius: var(--tree-kind-badge-radius);
   background: rgb(var(--color-elevated));
   color: rgb(var(--color-muted));
   font-family: var(--font-sans);
-  font-size: 9px;
+  font-size: var(--tree-kind-badge-font-size);
   font-weight: 700;
   line-height: 1;
   letter-spacing: 0.04em;
@@ -689,7 +693,7 @@ select {
 }
 
 .property-row span {
-  flex: 0 0 96px;
+  flex: 0 0 var(--property-label-width);
   color: rgb(var(--color-muted));
 }
 
@@ -700,7 +704,7 @@ select {
 
 .context-path {
   display: grid;
-  grid-template-columns: 96px minmax(0, 1fr);
+  grid-template-columns: var(--property-label-width) minmax(0, 1fr);
   align-items: start;
   gap: var(--space-2);
   min-width: 0;

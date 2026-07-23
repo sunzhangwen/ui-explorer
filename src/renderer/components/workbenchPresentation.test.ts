@@ -1,0 +1,117 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import type { ContextBoundary, ElementNodeKind, ElementSnapshot, SnapshotDiagnostic } from "../../shared/ipc.js";
+import type { SelectorLayer } from "../../shared/selector.js";
+import {
+  findTreeSearchMatches,
+  getContextPathLabels,
+  getDiagnosticPresentation,
+  getSelectorLayerMessageKey,
+  isTreeNodeSelectable
+} from "./workbenchPresentation.js";
+
+function createNode(kind: ElementNodeKind, id: string): ElementSnapshot {
+  return {
+    id,
+    depth: 0,
+    nodeType: 1,
+    nodeName: kind === "element" ? "BUTTON" : kind.toUpperCase(),
+    tagName: kind === "element" ? "button" : kind,
+    text: `${kind} searchable`,
+    kind,
+    attributes: { "data-testid": `${kind}-target` },
+    childIds: [],
+    children: []
+  };
+}
+
+test("diagnostic nodes are neither selectable nor returned by tree search", () => {
+  const diagnostic = createNode("diagnostic", "diagnostic-node");
+
+  assert.equal(isTreeNodeSelectable(diagnostic), false);
+  assert.deepEqual(findTreeSearchMatches([diagnostic], "diagnostic searchable"), []);
+});
+
+test("page, frame, shadow, and element nodes remain selectable and searchable", () => {
+  const nodes = (["page", "frame", "shadow", "element"] as const).map((kind) => createNode(kind, `${kind}-node`));
+
+  for (const node of nodes) {
+    assert.equal(isTreeNodeSelectable(node), true, `${node.kind} should be selectable`);
+    assert.deepEqual(findTreeSearchMatches(nodes, `${node.kind} searchable`), [node]);
+  }
+});
+
+test("context labels preserve boundary order within frame and shadow paths", () => {
+  const context: ContextBoundary[] = [
+    {
+      kind: "frame",
+      hostNodeId: "frame-one",
+      hostTagName: "iframe",
+      hostAttributes: { id: "checkout" }
+    },
+    {
+      kind: "shadow",
+      hostNodeId: "shadow-one",
+      hostTagName: "account-card",
+      hostAttributes: { "data-testid": "account" }
+    },
+    {
+      kind: "frame",
+      hostNodeId: "frame-two",
+      hostTagName: "iframe",
+      hostAttributes: { name: "payment" }
+    },
+    {
+      kind: "shadow",
+      hostNodeId: "shadow-two",
+      hostTagName: "confirm-dialog",
+      hostAttributes: {}
+    }
+  ];
+
+  assert.deepEqual(getContextPathLabels(context), {
+    frame: ['iframe#checkout', 'iframe[name="payment"]'],
+    shadow: ['account-card[data-testid="account"]', "confirm-dialog"]
+  });
+});
+
+test("diagnostic presentation exposes each localized key and captured detail", () => {
+  const diagnostics: SnapshotDiagnostic[] = [
+    {
+      code: "cross-origin-frame",
+      messageKey: "diagnostic.crossOriginFrame",
+      detail: "frame: payment"
+    },
+    {
+      code: "closed-shadow-root",
+      messageKey: "diagnostic.closedShadowRoot",
+      detail: "host: account-card"
+    },
+    {
+      code: "detached-context",
+      messageKey: "diagnostic.detachedContext",
+      detail: "host: confirm-dialog"
+    }
+  ];
+
+  for (const diagnostic of diagnostics) {
+    assert.deepEqual(getDiagnosticPresentation(diagnostic), {
+      messageKey: diagnostic.messageKey,
+      detail: diagnostic.detail
+    });
+  }
+});
+
+test("all selector layer kinds map to their localized message keys", () => {
+  const expected = {
+    page: "selector.layer.page",
+    frame: "selector.layer.frame",
+    shadow: "selector.layer.shadow",
+    ancestor: "selector.layer.ancestor",
+    target: "selector.layer.target"
+  } as const satisfies Record<SelectorLayer["kind"], string>;
+
+  for (const kind of Object.keys(expected) as SelectorLayer["kind"][]) {
+    assert.equal(getSelectorLayerMessageKey(kind), expected[kind]);
+  }
+});
