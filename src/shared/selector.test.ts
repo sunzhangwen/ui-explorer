@@ -1218,6 +1218,31 @@ test("Selenium boundary selector Python literal preserves quotes and backslashes
   assert.equal(evaluatePythonStringLiteral(literal), String.raw`iframe[title="Report \"Q3\" \\ archive"]`);
 });
 
+test("boundary selector literals escape CSS controls and JavaScript line separators", () => {
+  const title = "Line 1\nLine 2\r\f\u2028\u2029\u0001end";
+  const candidate = generateSelectorCandidates(createDirectFrameSnapshot(title), "direct-frame-target").find(
+    (item) => item.type === "css"
+  );
+  assert.ok(candidate);
+
+  const output = buildSelectorExports(candidate);
+  const expectedSelector = String.raw`iframe[title="Line 1\a Line 2\d \c \2028 \2029 \1 end"]`;
+  assert.doesNotMatch(output.playwright, /Line 1\r?\nLine 2/);
+  assert.doesNotMatch(output.selenium, /Line 1\r?\nLine 2/);
+  assert.doesNotMatch(output.playwright, /[\u2028\u2029]/);
+  assert.doesNotMatch(output.selenium, /[\u2028\u2029]/);
+
+  const playwrightLiteral = output.playwright.match(/frameLocator\(([\s\S]+?)\)/)?.[1];
+  const seleniumLiteral = output.selenium.match(
+    /frame = driver\.find_element\(By\.CSS_SELECTOR, ([\s\S]+?)\)/
+  )?.[1];
+  assert.ok(playwrightLiteral);
+  assert.ok(seleniumLiteral);
+
+  assert.equal(Function(`return ${playwrightLiteral}`)(), expectedSelector);
+  assert.equal(evaluatePythonStringLiteral(seleniumLiteral), expectedSelector);
+});
+
 test("JSON export includes ordered context chains and layer diagnostics", () => {
   const candidate = generateSelectorCandidates(contextSnapshot, "shadow-input").find(
     (item) => item.type === "css"

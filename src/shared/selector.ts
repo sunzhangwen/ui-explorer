@@ -1012,11 +1012,71 @@ function quotePython(value: string): string {
 }
 
 function cssEscape(value: string): string {
-  return value.replace(/([ !"#$%&'()*+,./:;<=>?@[\\\]^`{|}~])/g, "\\$1");
+  const characters = Array.from(value);
+  return characters
+    .map((character, index) => {
+      const codePoint = character.codePointAt(0) ?? 0;
+      if (codePoint === 0) {
+        return "\uFFFD";
+      }
+      if (
+        isCssControl(codePoint) ||
+        codePoint === 0x2028 ||
+        codePoint === 0x2029 ||
+        (index === 0 && isAsciiDigit(codePoint)) ||
+        (index === 1 && isAsciiDigit(codePoint) && characters[0] === "-")
+      ) {
+        return cssHexEscape(codePoint);
+      }
+      if (index === 0 && character === "-" && characters.length === 1) {
+        return "\\-";
+      }
+      if (
+        codePoint >= 0x80 ||
+        character === "-" ||
+        character === "_" ||
+        isAsciiDigit(codePoint) ||
+        isAsciiLetter(codePoint)
+      ) {
+        return character;
+      }
+      return `\\${character}`;
+    })
+    .join("");
 }
 
 function cssAttributeEscape(value: string): string {
-  return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+  return Array.from(value)
+    .map((character) => {
+      const codePoint = character.codePointAt(0) ?? 0;
+      if (codePoint === 0) {
+        return "\uFFFD";
+      }
+      if (isCssControl(codePoint) || codePoint === 0x2028 || codePoint === 0x2029) {
+        return cssHexEscape(codePoint);
+      }
+      if (character === "\\" || character === '"') {
+        return `\\${character}`;
+      }
+      return character;
+    })
+    .join("");
+}
+
+function cssHexEscape(codePoint: number): string {
+  return `\\${codePoint.toString(16)} `;
+}
+
+function isCssControl(codePoint: number): boolean {
+  return (codePoint >= 0x01 && codePoint <= 0x1f) || codePoint === 0x7f;
+}
+
+function isAsciiDigit(codePoint: number): boolean {
+  return codePoint >= 0x30 && codePoint <= 0x39;
+}
+
+function isAsciiLetter(codePoint: number): boolean {
+  return (codePoint >= 0x41 && codePoint <= 0x5a) || (codePoint >= 0x61 && codePoint <= 0x7a);
 }
 
 function clamp(value: number, min: number, max: number): number {
