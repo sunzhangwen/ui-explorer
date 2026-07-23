@@ -64,6 +64,17 @@ export type SelectorExports = {
   selenium: string;
 };
 
+type BoundarySelectorMatch = {
+  layerId: string;
+  parentContext: ContextBoundary[];
+  matchCount: number;
+};
+
+type BoundaryResolution = {
+  contexts: ContextBoundary[][];
+  selectorMatches: BoundarySelectorMatch[];
+};
+
 export type SelectorEdit =
   | {
       layerId: string;
@@ -143,10 +154,6 @@ export function applySelectorEdit(
 export function buildSelectorExports(candidate: SelectorCandidate): SelectorExports {
   const cssSelector = serializeContentCss(candidate.layers);
   const playwrightLocator = buildPlaywrightLocator(candidate.layers);
-  const shadowComments = candidate.layers
-    .filter((layer) => layer.enabled && layer.kind === "shadow")
-    .map((layer) => `  // Open Shadow DOM: ${serializeBoundaryHost(layer)}`)
-    .join("\n");
   const seleniumStatements = buildSeleniumStatements(candidate.layers, cssSelector);
   const layerDiagnostics = candidate.layers.flatMap((layer) =>
     layer.diagnostic ? [{ layerId: layer.id, ...layer.diagnostic }] : []
@@ -194,7 +201,7 @@ export function buildSelectorExports(candidate: SelectorCandidate): SelectorExpo
 
 test("locates captured element", async ({ page }) => {
   await page.goto("https://example.com");
-${shadowComments ? `${shadowComments}\n` : ""}  const element = ${playwrightLocator};
+  const element = ${playwrightLocator};
   await expect(element).toBeVisible();
   await element.click();
 });
@@ -235,10 +242,25 @@ export function buildUnavailableContextExports(node: ElementSnapshot): SelectorE
 
 function buildPlaywrightLocator(layers: SelectorLayer[]): string {
   let locator = "page";
+  let scopeKind: "page" | "frame" | "locator" = "page";
+
   for (const layer of layers) {
-    if (layer.enabled && layer.kind === "frame") {
+    if (!layer.enabled || (layer.kind !== "frame" && layer.kind !== "shadow")) {
+      continue;
+    }
+
+    if (layer.kind === "shadow") {
+      locator += `.locator(${quoteJsSingle(serializeBoundaryHost(layer))})`;
+      scopeKind = "locator";
+      continue;
+    }
+
+    if (scopeKind === "locator") {
+      locator += `.locator(${quoteJsSingle(serializeBoundaryHost(layer))}).contentFrame()`;
+    } else {
       locator += `.frameLocator(${quoteJsSingle(serializeBoundaryHost(layer))})`;
     }
+    scopeKind = "frame";
   }
 
   const contentLayers = getEnabledContentLayers(layers);
@@ -492,17 +514,34 @@ function validateSelector(
   const contextAware = layers.some(
     (layer) => layer.kind === "page" || layer.kind === "frame" || layer.kind === "shadow"
   );
-  const resolvedContexts =
+  const boundaryResolution =
     root && contextAware ? resolveEnabledBoundaryContexts(root, layers) : null;
   const matchedElementIds = flattenElementSnapshot(root)
-    .filter((node) => matchesActiveTargetLayer(root, node, layers, resolvedContexts))
+    .filter((node) =>
+      matchesActiveTargetLayer(root, node, layers, boundaryResolution?.contexts ?? null)
+    )
     .map((node) => node.id);
-  const matchCount = matchedElementIds.length;
+  const maxBoundaryMatchCount =
+    boundaryResolution?.selectorMatches.reduce(
+      (maximum, match) => Math.max(maximum, match.matchCount),
+      0
+    ) ?? 0;
+  const hasAmbiguousBoundary = maxBoundaryMatchCount > 1;
+  const matchCount = hasAmbiguousBoundary
+    ? Math.max(matchedElementIds.length, maxBoundaryMatchCount)
+    : matchedElementIds.length;
+  const status: SelectorValidationStatus = hasAmbiguousBoundary
+    ? "multiple"
+    : matchCount === 0
+      ? "missing"
+      : matchCount === 1
+        ? "unique"
+        : "multiple";
   const target = targetId ? findElementSnapshot(root, targetId) : null;
   const visible = matchedElementIds.length === 0 ? false : matchedElementIds.some((id) => findElementSnapshot(root, id)?.visible === true);
   const diagnostics: SelectorRisk[] = [];
 
-  if (matchCount === 0) {
+  if (status === "missing") {
     diagnostics.push({
       code: "low-signal",
       messageKey: "selector.diagnostic.missing",
@@ -510,7 +549,7 @@ function validateSelector(
     });
   }
 
-  if (matchCount > 1) {
+  if (status === "multiple") {
     diagnostics.push({
       code: "not-unique",
       messageKey: "selector.diagnostic.multiple",
@@ -527,11 +566,11 @@ function validateSelector(
   }
 
   return {
-    status: matchCount === 0 ? "missing" : matchCount === 1 ? "unique" : "multiple",
+    status,
     matchCount,
-    unique: matchCount === 1,
+    unique: status === "unique",
     visible,
-    targetConsistent: matchedElementIds.includes(targetId),
+    targetConsistent: !hasAmbiguousBoundary && matchedElementIds.includes(targetId),
     matchedElementIds,
     diagnostics
   };
@@ -619,9 +658,10 @@ function matchesContextAwareTarget(
 function resolveEnabledBoundaryContexts(
   root: ElementSnapshot,
   layers: SelectorLayer[]
-): ContextBoundary[][] {
+): BoundaryResolution {
   const nodes = flattenElementSnapshot(root);
   let contexts: ContextBoundary[][] = [[]];
+  const selectorMatches: BoundarySelectorMatch[] = [];
 
   for (const layer of layers) {
     if (!layer.enabled || (layer.kind !== "frame" && layer.kind !== "shadow")) {
@@ -637,6 +677,11 @@ function resolveEnabledBoundaryContexts(
           contextSignaturesMatch(node.context ?? [], context) &&
           matchesBoundaryHostLayer(node, layer)
       );
+      selectorMatches.push({
+        layerId: layer.id,
+        parentContext: context,
+        matchCount: matchingHosts.length
+      });
 
       for (const host of matchingHosts) {
         const boundaryRoot = host.children.find((child) => {
@@ -665,7 +710,10 @@ function resolveEnabledBoundaryContexts(
     }
   }
 
-  return contexts;
+  return {
+    contexts,
+    selectorMatches
+  };
 }
 
 function matchesBoundaryHostLayer(node: ElementSnapshot, layer: SelectorLayer): boolean {

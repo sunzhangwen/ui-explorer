@@ -452,6 +452,42 @@ const appendParentContextTarget = (root: ElementSnapshot, id: string, name: stri
   body.children.push(target);
 };
 
+const findFixtureNode = (root: ElementSnapshot, id: string): ElementSnapshot | null => {
+  if (root.id === id) {
+    return root;
+  }
+
+  for (const child of root.children) {
+    const match = findFixtureNode(child, id);
+    if (match) {
+      return match;
+    }
+  }
+
+  return null;
+};
+
+const appendTargetToContext = (
+  parent: ElementSnapshot,
+  id: string,
+  name: string
+): ElementSnapshot => {
+  const target = makeNode({
+    id,
+    parentId: parent.id,
+    depth: parent.depth + 1,
+    nodeName: "INPUT",
+    tagName: "input",
+    kind: "element",
+    context: parent.context ? [...parent.context] : undefined,
+    visible: true,
+    attributes: { name }
+  });
+  parent.childIds.push(id);
+  parent.children.push(target);
+  return target;
+};
+
 const createTwoFrameSnapshot = (): ElementSnapshot => {
   const outerBoundary = {
     kind: "frame" as const,
@@ -534,6 +570,103 @@ const createTwoFrameSnapshot = (): ElementSnapshot => {
                             context: [outerBoundary, innerBoundary],
                             visible: true,
                             attributes: { name: "nested-frame-query" }
+                          })
+                        ]
+                      })
+                    ]
+                  })
+                ]
+              })
+            ]
+          })
+        ]
+      })
+    ]
+  });
+};
+
+const createTwoShadowSnapshot = (): ElementSnapshot => {
+  const outerBoundary = {
+    kind: "shadow" as const,
+    hostNodeId: "outer-shadow-host",
+    hostTagName: "outer-widget",
+    hostAttributes: { "data-testid": "outer-shadow-host" }
+  };
+  const innerBoundary = {
+    kind: "shadow" as const,
+    hostNodeId: "inner-shadow-host",
+    hostTagName: "inner-widget",
+    hostAttributes: { "data-testid": "inner-shadow-host" }
+  };
+
+  return makeNode({
+    id: "two-shadow-page",
+    nodeName: "HTML",
+    tagName: "html",
+    kind: "page",
+    childIds: ["body"],
+    children: [
+      makeNode({
+        id: "body",
+        parentId: "two-shadow-page",
+        depth: 1,
+        nodeName: "BODY",
+        tagName: "body",
+        childIds: ["outer-shadow-host"],
+        children: [
+          makeNode({
+            id: "outer-shadow-host",
+            parentId: "body",
+            depth: 2,
+            nodeName: "OUTER-WIDGET",
+            tagName: "outer-widget",
+            kind: "element",
+            attributes: { "data-testid": "outer-shadow-host" },
+            childIds: ["outer-shadow-root"],
+            children: [
+              makeNode({
+                id: "outer-shadow-root",
+                parentId: "outer-shadow-host",
+                depth: 3,
+                nodeType: 11,
+                nodeName: "#shadow-root",
+                tagName: undefined,
+                kind: "shadow",
+                context: [outerBoundary],
+                childIds: ["inner-shadow-host"],
+                children: [
+                  makeNode({
+                    id: "inner-shadow-host",
+                    parentId: "outer-shadow-root",
+                    depth: 4,
+                    nodeName: "INNER-WIDGET",
+                    tagName: "inner-widget",
+                    kind: "element",
+                    context: [outerBoundary],
+                    attributes: { "data-testid": "inner-shadow-host" },
+                    childIds: ["inner-shadow-root"],
+                    children: [
+                      makeNode({
+                        id: "inner-shadow-root",
+                        parentId: "inner-shadow-host",
+                        depth: 5,
+                        nodeType: 11,
+                        nodeName: "#shadow-root",
+                        tagName: undefined,
+                        kind: "shadow",
+                        context: [outerBoundary, innerBoundary],
+                        childIds: ["nested-shadow-target"],
+                        children: [
+                          makeNode({
+                            id: "nested-shadow-target",
+                            parentId: "inner-shadow-root",
+                            depth: 6,
+                            nodeName: "INPUT",
+                            tagName: "input",
+                            kind: "element",
+                            context: [outerBoundary, innerBoundary],
+                            visible: true,
+                            attributes: { name: "nested-shadow-query" }
                           })
                         ]
                       })
@@ -792,9 +925,10 @@ test("Playwright export enters nested frames before locating shadow content", ()
 
   const output = buildSelectorExports(candidate).playwright;
 
-  assert.match(output, /page\.frameLocator\('iframe\[title="Payment"\]'\)/);
-  assert.match(output, /Open Shadow DOM: search-widget\[data-testid="search-widget"\]/);
-  assert.ok(output.indexOf("frameLocator") < output.indexOf('locator("input[name=\\\"query\\\"]")'));
+  assert.match(
+    output,
+    /page\.frameLocator\('iframe\[title="Payment"\]'\)\.locator\('search-widget\[data-testid="search-widget"\]'\)\.locator\("input\[name=\\"query\\"\]"\)/
+  );
 });
 
 test("Playwright export falls back from XPath inside open shadow roots", () => {
@@ -884,6 +1018,70 @@ test("boundary tag keeps an attribute collision with a non-host element out of t
   assert.match(buildSelectorExports(candidate).selenium, /By\.CSS_SELECTOR, 'iframe\[title="Direct frame"\]'/);
 });
 
+test("tag-disabled frame boundary reports a preceding non-host selector collision as ambiguous", () => {
+  const root = createDirectFrameSnapshot();
+  const body = root.children[0];
+  assert.ok(body);
+  body.childIds.unshift("frame-title-collision");
+  body.children.unshift(
+    makeNode({
+      id: "frame-title-collision",
+      parentId: body.id,
+      depth: body.depth + 1,
+      nodeName: "DIV",
+      tagName: "div",
+      kind: "element",
+      attributes: { title: "Direct frame" }
+    })
+  );
+
+  const candidate = generateSelectorCandidates(root, "direct-frame-target")[0];
+  assert.ok(candidate);
+  const frame = candidate.layers.find((layer) => layer.kind === "frame");
+  assert.ok(frame);
+
+  const edited = applySelectorEdit(root, candidate, { layerId: frame.id, tagEnabled: false });
+
+  assert.equal(edited.validation.status, "multiple");
+  assert.equal(edited.validation.matchCount, 2);
+  assert.equal(edited.validation.unique, false);
+  assert.equal(edited.validation.targetConsistent, false);
+  assert.deepEqual(edited.validation.matchedElementIds, ["direct-frame-target"]);
+  assert.ok(edited.validation.diagnostics.some((diagnostic) => diagnostic.code === "not-unique"));
+});
+
+test("tag-disabled shadow boundary reports a preceding non-host selector collision as ambiguous", () => {
+  const root = createDirectShadowSnapshot();
+  const body = root.children[0];
+  assert.ok(body);
+  body.childIds.unshift("shadow-testid-collision");
+  body.children.unshift(
+    makeNode({
+      id: "shadow-testid-collision",
+      parentId: body.id,
+      depth: body.depth + 1,
+      nodeName: "DIV",
+      tagName: "div",
+      kind: "element",
+      attributes: { "data-testid": "direct-shadow-host" }
+    })
+  );
+
+  const candidate = generateSelectorCandidates(root, "direct-shadow-target")[0];
+  assert.ok(candidate);
+  const shadow = candidate.layers.find((layer) => layer.kind === "shadow");
+  assert.ok(shadow);
+
+  const edited = applySelectorEdit(root, candidate, { layerId: shadow.id, tagEnabled: false });
+
+  assert.equal(edited.validation.status, "multiple");
+  assert.equal(edited.validation.matchCount, 2);
+  assert.equal(edited.validation.unique, false);
+  assert.equal(edited.validation.targetConsistent, false);
+  assert.deepEqual(edited.validation.matchedElementIds, ["direct-shadow-target"]);
+  assert.ok(edited.validation.diagnostics.some((diagnostic) => diagnostic.code === "not-unique"));
+});
+
 test("boundary layers omit semantic role constraints that CSS exports cannot represent", () => {
   const root = createDirectShadowSnapshot();
   const host = root.children[0]?.children[0];
@@ -954,6 +1152,31 @@ test("Playwright and Selenium exports enter two nested frames in order", () => {
   assert.equal(candidate.layers.some((layer) => layer.kind === "ancestor" && layer.nodeId === "inner-frame"), false);
 });
 
+test("Playwright export uses each nested shadow boundary as executable scope", () => {
+  const root = createTwoShadowSnapshot();
+  const candidate = generateSelectorCandidates(root, "nested-shadow-target").find(
+    (item) => item.type === "css"
+  );
+  assert.ok(candidate);
+
+  const output = buildSelectorExports(candidate).playwright;
+
+  assert.match(
+    output,
+    /page\.locator\('outer-widget\[data-testid="outer-shadow-host"\]'\)\.locator\('inner-widget\[data-testid="inner-shadow-host"\]'\)\.locator\("input\[name=\\"nested-shadow-query\\"\]"\)/
+  );
+
+  const innerShadow = candidate.layers.find(
+    (layer) => layer.kind === "shadow" && layer.nodeId === "inner-shadow-host"
+  );
+  assert.ok(innerShadow);
+  const edited = applySelectorEdit(root, candidate, { layerId: innerShadow.id, enabled: false });
+  const editedOutput = buildSelectorExports(edited).playwright;
+
+  assert.doesNotMatch(editedOutput, /inner-widget\[data-testid="inner-shadow-host"\]/);
+  assert.notEqual(editedOutput, output);
+});
+
 test("frame shadow nested frame exports keep each traversal step in its current context", () => {
   const candidate = generateSelectorCandidates(createAlternatingBoundarySnapshot(), "alternating-target").find(
     (item) => item.type === "css"
@@ -967,7 +1190,7 @@ test("frame shadow nested frame exports keep each traversal step in its current 
 
   assert.match(
     output.playwright,
-    /page\.frameLocator\('iframe\[title="Alternating outer frame"\]'\)\.frameLocator\('iframe\[title="Alternating inner frame"\]'\)\.locator\("input\[name=\\"alternating-query\\"\]"\)/
+    /page\.frameLocator\('iframe\[title="Alternating outer frame"\]'\)\.locator\('nested-widget\[data-testid="alternating-shadow-host"\]'\)\.locator\('iframe\[title="Alternating inner frame"\]'\)\.contentFrame\(\)\.locator\("input\[name=\\"alternating-query\\"\]"\)/
   );
   assert.equal(countOccurrences(output.playwright, 'iframe[title="Alternating inner frame"]'), 1);
   assert.match(
@@ -1167,10 +1390,36 @@ test("duplicate frame hosts are counted by runtime-exportable boundary constrain
 
   assert.equal(candidate.validation.status, "multiple");
   assert.equal(candidate.validation.matchCount, 2);
-  assert.equal(candidate.validation.targetConsistent, true);
+  assert.equal(candidate.validation.targetConsistent, false);
   assert.deepEqual(candidate.validation.matchedElementIds, [
     "direct-frame-target",
     "direct-frame-target-duplicate"
+  ]);
+});
+
+test("duplicate frame hosts stay ambiguous when only the second context contains the target", () => {
+  const root = createDuplicateFrameHostSnapshot();
+  const firstTarget = findFixtureNode(root, "direct-frame-target");
+  assert.ok(firstTarget);
+  firstTarget.attributes = {
+    ...firstTarget.attributes,
+    name: "other-frame-query"
+  };
+
+  const candidate = generateSelectorCandidates(root, "direct-frame-target-duplicate")[0];
+  assert.ok(candidate);
+
+  assert.equal(candidate.validation.status, "multiple");
+  assert.equal(candidate.validation.matchCount, 2);
+  assert.equal(candidate.validation.unique, false);
+  assert.equal(candidate.validation.targetConsistent, false);
+  assert.deepEqual(candidate.validation.matchedElementIds, ["direct-frame-target-duplicate"]);
+  assert.deepEqual(candidate.validation.diagnostics, [
+    {
+      code: "not-unique",
+      messageKey: "selector.diagnostic.multiple",
+      detail: "Selector matches 2 elements."
+    }
   ]);
 });
 
@@ -1180,9 +1429,37 @@ test("duplicate shadow hosts are counted by runtime-exportable boundary constrai
   assert.ok(candidate);
 
   assert.equal(candidate.validation.status, "multiple");
+  assert.equal(candidate.validation.matchCount, 2);
+  assert.equal(candidate.validation.targetConsistent, false);
   assert.deepEqual(candidate.validation.matchedElementIds, [
     "direct-shadow-target",
     "direct-shadow-target-duplicate"
+  ]);
+});
+
+test("duplicate shadow hosts stay ambiguous when only the second context contains the target", () => {
+  const root = createDuplicateShadowHostSnapshot();
+  const firstTarget = findFixtureNode(root, "direct-shadow-target");
+  assert.ok(firstTarget);
+  firstTarget.attributes = {
+    ...firstTarget.attributes,
+    name: "other-shadow-query"
+  };
+
+  const candidate = generateSelectorCandidates(root, "direct-shadow-target-duplicate")[0];
+  assert.ok(candidate);
+
+  assert.equal(candidate.validation.status, "multiple");
+  assert.equal(candidate.validation.matchCount, 2);
+  assert.equal(candidate.validation.unique, false);
+  assert.equal(candidate.validation.targetConsistent, false);
+  assert.deepEqual(candidate.validation.matchedElementIds, ["direct-shadow-target-duplicate"]);
+  assert.deepEqual(candidate.validation.diagnostics, [
+    {
+      code: "not-unique",
+      messageKey: "selector.diagnostic.multiple",
+      detail: "Selector matches 2 elements."
+    }
   ]);
 });
 
@@ -1226,4 +1503,102 @@ test("disabling a shadow boundary reports matching targets in the remaining ligh
   assert.equal(edited.validation.status, "unique");
   assert.deepEqual(edited.validation.matchedElementIds, ["light-dom-query"]);
   assert.equal(edited.validation.targetConsistent, false);
+});
+
+test("disabling either nested frame boundary makes the original target context unreachable", () => {
+  for (const disabledLayerId of ["frame-1", "frame-2"]) {
+    const root = createTwoFrameSnapshot();
+    const candidate = generateSelectorCandidates(root, "nested-frame-target")[0];
+    assert.ok(candidate);
+
+    const edited = applySelectorEdit(root, candidate, {
+      layerId: disabledLayerId,
+      enabled: false
+    });
+
+    assert.equal(edited.validation.status, "missing", disabledLayerId);
+    assert.equal(edited.validation.matchCount, 0, disabledLayerId);
+    assert.equal(edited.validation.targetConsistent, false, disabledLayerId);
+    assert.deepEqual(edited.validation.matchedElementIds, [], disabledLayerId);
+  }
+});
+
+test("disabling an inner frame resolves target matching from the nearest enabled frame context", () => {
+  const root = createTwoFrameSnapshot();
+  const outerFrameRoot = findFixtureNode(root, "outer-frame-root");
+  assert.ok(outerFrameRoot);
+  appendTargetToContext(
+    outerFrameRoot,
+    "outer-frame-fallback-target",
+    "nested-frame-query"
+  );
+  const candidate = generateSelectorCandidates(root, "nested-frame-target")[0];
+  assert.ok(candidate);
+
+  const edited = applySelectorEdit(root, candidate, {
+    layerId: "frame-2",
+    enabled: false
+  });
+
+  assert.equal(edited.validation.status, "unique");
+  assert.deepEqual(edited.validation.matchedElementIds, ["outer-frame-fallback-target"]);
+  assert.equal(edited.validation.targetConsistent, false);
+});
+
+test("disabling either nested shadow boundary makes the original target context unreachable", () => {
+  for (const disabledLayerId of ["shadow-1", "shadow-2"]) {
+    const root = createTwoShadowSnapshot();
+    const candidate = generateSelectorCandidates(root, "nested-shadow-target")[0];
+    assert.ok(candidate);
+
+    const edited = applySelectorEdit(root, candidate, {
+      layerId: disabledLayerId,
+      enabled: false
+    });
+
+    assert.equal(edited.validation.status, "missing", disabledLayerId);
+    assert.equal(edited.validation.matchCount, 0, disabledLayerId);
+    assert.equal(edited.validation.targetConsistent, false, disabledLayerId);
+    assert.deepEqual(edited.validation.matchedElementIds, [], disabledLayerId);
+  }
+});
+
+test("disabling an inner shadow resolves target matching from the nearest enabled shadow context", () => {
+  const root = createTwoShadowSnapshot();
+  const outerShadowRoot = findFixtureNode(root, "outer-shadow-root");
+  assert.ok(outerShadowRoot);
+  appendTargetToContext(
+    outerShadowRoot,
+    "outer-shadow-fallback-target",
+    "nested-shadow-query"
+  );
+  const candidate = generateSelectorCandidates(root, "nested-shadow-target")[0];
+  assert.ok(candidate);
+
+  const edited = applySelectorEdit(root, candidate, {
+    layerId: "shadow-2",
+    enabled: false
+  });
+
+  assert.equal(edited.validation.status, "unique");
+  assert.deepEqual(edited.validation.matchedElementIds, ["outer-shadow-fallback-target"]);
+  assert.equal(edited.validation.targetConsistent, false);
+});
+
+test("disabling any frame-shadow-frame boundary makes later traversal resolve from the last enabled context", () => {
+  for (const disabledLayerId of ["frame-1", "shadow-1", "frame-2"]) {
+    const root = createAlternatingBoundarySnapshot();
+    const candidate = generateSelectorCandidates(root, "alternating-target")[0];
+    assert.ok(candidate);
+
+    const edited = applySelectorEdit(root, candidate, {
+      layerId: disabledLayerId,
+      enabled: false
+    });
+
+    assert.equal(edited.validation.status, "missing", disabledLayerId);
+    assert.equal(edited.validation.matchCount, 0, disabledLayerId);
+    assert.equal(edited.validation.targetConsistent, false, disabledLayerId);
+    assert.deepEqual(edited.validation.matchedElementIds, [], disabledLayerId);
+  }
 });
