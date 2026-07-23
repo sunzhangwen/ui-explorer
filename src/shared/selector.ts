@@ -265,11 +265,12 @@ function buildSeleniumStatements(layers: SelectorLayer[], cssSelector: string): 
 }
 
 function serializeBoundaryHost(layer: SelectorLayer): string {
+  const tag = layer.tagEnabled ? layer.tagName : "";
   const attributeSelector = layer.attributes
-    .filter((attribute) => attribute.enabled && attribute.name !== "role" && attribute.name !== TEXT_ATTRIBUTE_NAME)
+    .filter((attribute) => attribute.enabled && isExportableBoundaryAttribute(attribute))
     .map((attribute) => `[${attribute.name}="${cssAttributeEscape(attribute.value)}"]`)
     .join("");
-  return attributeSelector || (layer.tagEnabled ? layer.tagName : "*");
+  return `${tag}${attributeSelector}` || "*";
 }
 
 function serializeContentCss(layers: SelectorLayer[]): string {
@@ -367,7 +368,15 @@ function buildTargetLayers(root: ElementSnapshot, target: ElementSnapshot): Sele
     }
 
     const layer = createSelectorLayer(host, kind, `${kind}-${boundaryCounts[kind]}`, true, true);
-    layers.push(boundaryNode.diagnostic ? { ...layer, diagnostic: boundaryNode.diagnostic } : layer);
+    const boundaryLayer = {
+      ...layer,
+      attributes: layer.attributes.filter(isExportableBoundaryAttribute)
+    };
+    layers.push(
+      boundaryNode.diagnostic
+        ? { ...boundaryLayer, diagnostic: boundaryNode.diagnostic }
+        : boundaryLayer
+    );
   }
 
   ordinaryNodes.forEach((node, index) => {
@@ -456,8 +465,13 @@ function validateSelector(
   targetId: string,
   layers: SelectorLayer[]
 ): SelectorValidation {
+  const contextAware = layers.some(
+    (layer) => layer.kind === "page" || layer.kind === "frame" || layer.kind === "shadow"
+  );
+  const resolvedContexts =
+    root && contextAware ? resolveEnabledBoundaryContexts(root, layers) : null;
   const matchedElementIds = flattenElementSnapshot(root)
-    .filter((node) => matchesActiveTargetLayer(root, node, layers))
+    .filter((node) => matchesActiveTargetLayer(root, node, layers, resolvedContexts))
     .map((node) => node.id);
   const matchCount = matchedElementIds.length;
   const target = targetId ? findElementSnapshot(root, targetId) : null;
@@ -499,9 +513,14 @@ function validateSelector(
   };
 }
 
-function matchesActiveTargetLayer(root: ElementSnapshot | null, node: ElementSnapshot, layers: SelectorLayer[]): boolean {
+function matchesActiveTargetLayer(
+  root: ElementSnapshot | null,
+  node: ElementSnapshot,
+  layers: SelectorLayer[],
+  resolvedContexts: ContextBoundary[][] | null
+): boolean {
   if (layers.some((layer) => layer.kind === "page" || layer.kind === "frame" || layer.kind === "shadow")) {
-    return matchesContextAwareTarget(root, node, layers);
+    return matchesContextAwareTarget(root, node, layers, resolvedContexts ?? []);
   }
 
   const activeLayers = layers.filter((layer) => layer.enabled);
@@ -533,7 +552,8 @@ function matchesActiveTargetLayer(root: ElementSnapshot | null, node: ElementSna
 function matchesContextAwareTarget(
   root: ElementSnapshot | null,
   node: ElementSnapshot,
-  layers: SelectorLayer[]
+  layers: SelectorLayer[],
+  resolvedContexts: ContextBoundary[][]
 ): boolean {
   if (!root || node.nodeType !== 1 || !node.tagName) {
     return false;
@@ -544,16 +564,8 @@ function matchesContextAwareTarget(
     return false;
   }
 
-  const boundaryLayers = layers.filter((layer) => layer.kind === "frame" || layer.kind === "shadow");
-  if (boundaryLayers.some((layer) => !layer.enabled)) {
-    return false;
-  }
-
   const context = node.context ?? [];
-  if (
-    context.length !== boundaryLayers.length ||
-    !boundaryLayers.every((layer, index) => matchesContextBoundary(context[index], layer))
-  ) {
+  if (!resolvedContexts.some((resolvedContext) => contextSignaturesMatch(context, resolvedContext))) {
     return false;
   }
 
@@ -580,18 +592,81 @@ function matchesContextAwareTarget(
   return cursor === activeAncestors.length;
 }
 
-function matchesContextBoundary(boundary: ContextBoundary | undefined, layer: SelectorLayer): boolean {
-  if (!boundary || boundary.kind !== layer.kind || boundary.hostNodeId !== layer.nodeId) {
-    return false;
+function resolveEnabledBoundaryContexts(
+  root: ElementSnapshot,
+  layers: SelectorLayer[]
+): ContextBoundary[][] {
+  const nodes = flattenElementSnapshot(root);
+  let contexts: ContextBoundary[][] = [[]];
+
+  for (const layer of layers) {
+    if (!layer.enabled || (layer.kind !== "frame" && layer.kind !== "shadow")) {
+      continue;
+    }
+
+    const nextContexts: ContextBoundary[][] = [];
+    for (const context of contexts) {
+      const matchingHosts = nodes.filter(
+        (node) =>
+          node.nodeType === 1 &&
+          node.tagName &&
+          contextSignaturesMatch(node.context ?? [], context) &&
+          matchesBoundaryHostLayer(node, layer)
+      );
+
+      for (const host of matchingHosts) {
+        const boundaryRoot = host.children.find((child) => {
+          if (child.kind !== layer.kind || child.context?.length !== context.length + 1) {
+            return false;
+          }
+
+          const parentContext = child.context.slice(0, -1);
+          const boundary = child.context.at(-1);
+          return (
+            contextSignaturesMatch(parentContext, context) &&
+            boundary?.kind === layer.kind &&
+            boundary.hostNodeId === host.id
+          );
+        });
+
+        if (boundaryRoot?.context) {
+          nextContexts.push(boundaryRoot.context);
+        }
+      }
+    }
+
+    contexts = deduplicateContexts(nextContexts);
+    if (contexts.length === 0) {
+      break;
+    }
   }
 
-  if (layer.tagEnabled && boundary.hostTagName !== layer.tagName) {
+  return contexts;
+}
+
+function matchesBoundaryHostLayer(node: ElementSnapshot, layer: SelectorLayer): boolean {
+  if (layer.tagEnabled && node.tagName !== layer.tagName) {
     return false;
   }
 
   return layer.attributes
-    .filter((attribute) => attribute.enabled)
-    .every((attribute) => boundary.hostAttributes[attribute.name] === attribute.value);
+    .filter((attribute) => attribute.enabled && isExportableBoundaryAttribute(attribute))
+    .every((attribute) => node.attributes[attribute.name] === attribute.value);
+}
+
+function deduplicateContexts(contexts: ContextBoundary[][]): ContextBoundary[][] {
+  const seen = new Set<string>();
+  return contexts.filter((context) => {
+    const signature = context
+      .map((boundary) => `${boundary.kind}:${boundary.hostNodeId}`)
+      .join("/");
+    if (seen.has(signature)) {
+      return false;
+    }
+
+    seen.add(signature);
+    return true;
+  });
 }
 
 function contextSignaturesMatch(left: ContextBoundary[], right: ContextBoundary[]): boolean {
@@ -602,6 +677,10 @@ function contextSignaturesMatch(left: ContextBoundary[], right: ContextBoundary[
         boundary.kind === right[index]?.kind && boundary.hostNodeId === right[index]?.hostNodeId
     )
   );
+}
+
+function isExportableBoundaryAttribute(attribute: SelectorAttribute): boolean {
+  return attribute.name !== "role" && attribute.name !== TEXT_ATTRIBUTE_NAME;
 }
 
 function matchesLayer(node: ElementSnapshot, layer: SelectorLayer): boolean {
