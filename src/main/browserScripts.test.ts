@@ -95,7 +95,9 @@ function runHighlight(
   elementIds: string[],
   registry: Map<string, FakeElement>,
   contextIdentities = new Map<string, RuntimeContextIdentity[]>(),
-  documents = new Set<FakeDocument>([createFakeDocument()])
+  documents = new Set<FakeDocument>([createFakeDocument()]),
+  expectedSnapshotToken = "snapshot-current",
+  currentSnapshotToken = expectedSnapshotToken
 ): {
   targets: Array<{
     elementId: string;
@@ -104,13 +106,18 @@ function runHighlight(
   }>;
 } {
   const topDocument = documents.values().next().value ?? createFakeDocument();
-  return runInNewContext(HIGHLIGHT_SCRIPT.replace("__ELEMENT_IDS__", JSON.stringify(elementIds)), {
+  return runInNewContext(
+    HIGHLIGHT_SCRIPT
+      .replace("__ELEMENT_IDS__", JSON.stringify(elementIds))
+      .replace("__SNAPSHOT_TOKEN__", JSON.stringify(expectedSnapshotToken)),
+    {
     Node: { ELEMENT_NODE: 1, DOCUMENT_NODE: 9 },
     document: topDocument,
     window: {
       __uiExplorerElements: registry,
       __uiExplorerDocuments: documents,
-      __uiExplorerElementContexts: contextIdentities
+      __uiExplorerElementContexts: contextIdentities,
+      __uiExplorerSnapshotToken: currentSnapshotToken
     }
   }) as {
     targets: Array<{
@@ -133,6 +140,7 @@ test("snapshot script records frame and shadow context boundaries", () => {
   assert.match(SNAPSHOT_SCRIPT, /shadowRoot/);
   assert.match(SNAPSHOT_SCRIPT, /cross-origin-frame/);
   assert.match(SNAPSHOT_SCRIPT, /closed-shadow-root/);
+  assert.match(SNAPSHOT_SCRIPT, /__uiExplorerSnapshotToken/);
 });
 
 test("highlight and picker scripts visit accessible frame documents", () => {
@@ -140,6 +148,22 @@ test("highlight and picker scripts visit accessible frame documents", () => {
   assert.match(HIGHLIGHT_SCRIPT, /documents/);
   assert.match(ELEMENT_PICKER_SCRIPT, /contentDocument/);
   assert.match(ELEMENT_PICKER_SCRIPT, /composedPath/);
+});
+
+test("stale highlight requests do not clear or draw overlays for a newer snapshot", () => {
+  const document = createFakeDocument();
+  const target = createFakeElement(document);
+  const result = runHighlight(
+    ["n-1"],
+    new Map([["n-1", target]]),
+    new Map(),
+    new Set([document]),
+    "snapshot-old",
+    "snapshot-new"
+  );
+
+  assert.deepEqual(normalizeVmValue(result.targets), []);
+  assert.deepEqual(document.appended, []);
 });
 
 test("picker installs listeners in every captured document", () => {

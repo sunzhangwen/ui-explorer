@@ -2,8 +2,14 @@ import { findElementSnapshot, flattenElementSnapshot, getElementPath } from "./d
 import type { ContextBoundary, ElementSnapshot, SnapshotDiagnostic } from "./ipc.js";
 
 export type SelectorType = "css" | "xpath" | "playwright";
-export type SelectorValidationStatus = "missing" | "unique" | "multiple";
-export type SelectorRiskCode = "dynamic-id" | "index-path" | "not-unique" | "not-visible" | "low-signal";
+export type SelectorValidationStatus = "missing" | "unique" | "multiple" | "mismatch";
+export type SelectorRiskCode =
+  | "dynamic-id"
+  | "index-path"
+  | "not-unique"
+  | "not-visible"
+  | "low-signal"
+  | "target-mismatch";
 
 export type SelectorRisk = {
   code: SelectorRiskCode;
@@ -528,15 +534,17 @@ function buildTargetLayers(root: ElementSnapshot, target: ElementSnapshot): Sele
 
   ordinaryNodes.forEach((node, index) => {
     const isTarget = node.id === target.id;
-    layers.push(
-      createSelectorLayer(
-        node,
-        isTarget ? "target" : "ancestor",
-        isTarget ? "target" : `ancestor-${index + 1}`,
-        isTarget,
-        false
-      )
+    const layer = createSelectorLayer(
+      node,
+      isTarget ? "target" : "ancestor",
+      isTarget ? "target" : `ancestor-${index + 1}`,
+      isTarget,
+      false
     );
+    layers.push({
+      ...layer,
+      attributes: layer.attributes.filter(isExportableBoundaryAttribute)
+    });
   });
 
   return layers;
@@ -646,13 +654,20 @@ function validateSelector(
       })) ?? [];
   const hasBlockingBoundary = boundaryAmbiguities.some((ambiguity) => ambiguity.blocking);
   const matchCount = matchedElementIds.length;
+  const targetConsistent =
+    !hasBlockingBoundary &&
+    matchedElementIds.length === 1 &&
+    matchedElementIds[0] === targetId &&
+    seleniumSelectsTarget;
   const status: SelectorValidationStatus = hasBlockingBoundary
     ? "multiple"
     : matchCount === 0
       ? "missing"
-      : matchCount === 1
-        ? "unique"
-        : "multiple";
+      : matchCount > 1
+        ? "multiple"
+        : targetConsistent
+          ? "unique"
+          : "mismatch";
   const target = targetId ? findElementSnapshot(root, targetId) : null;
   const visible = matchedElementIds.length === 0 ? false : matchedElementIds.some((id) => findElementSnapshot(root, id)?.visible === true);
   const diagnostics: SelectorRisk[] = [];
@@ -689,6 +704,14 @@ function validateSelector(
     });
   }
 
+  if (status === "mismatch") {
+    diagnostics.push({
+      code: "target-mismatch",
+      messageKey: "selector.diagnostic.targetMismatch",
+      detail: "Selector uniquely matches a different element than the captured target."
+    });
+  }
+
   if (target && target.visible === false) {
     diagnostics.push({
       code: "not-visible",
@@ -702,10 +725,7 @@ function validateSelector(
     matchCount,
     unique: status === "unique",
     visible,
-    targetConsistent:
-      status === "unique" &&
-      matchedElementIds[0] === targetId &&
-      seleniumSelectsTarget,
+    targetConsistent,
     matchedElementIds,
     boundaryAmbiguities,
     diagnostics

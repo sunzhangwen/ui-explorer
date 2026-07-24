@@ -11,6 +11,7 @@ export type HighlightRequestIdentity = {
   rootId: string | null;
   targetId: string | null;
   generation: number;
+  snapshotToken: string | null;
 };
 
 export function captureHighlightRequest(
@@ -26,7 +27,8 @@ export function captureHighlightRequest(
     capturedAt: snapshot.capturedAt,
     rootId: snapshot.root?.id ?? null,
     targetId,
-    generation
+    generation,
+    snapshotToken: snapshot.snapshotToken ?? null
   };
 }
 
@@ -40,6 +42,7 @@ export function isHighlightRequestCurrent(
     snapshot !== null &&
     request !== null &&
     snapshot.capturedAt === request.capturedAt &&
+    (snapshot.snapshotToken ?? null) === request.snapshotToken &&
     (snapshot.root?.id ?? null) === request.rootId &&
     targetId === request.targetId &&
     generation === request.generation

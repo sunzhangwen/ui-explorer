@@ -192,7 +192,10 @@ export const useAppStore = create<AppStore>()(
           requestState.domSnapshotGeneration
         );
         try {
-          const result = await getApi().highlightElement(elementId);
+          const result = await getApi().highlightElement({
+            elementId,
+            snapshotToken: request?.snapshotToken ?? null
+          });
           set((state) => {
             const domSnapshot = mergeCurrentHighlightResult(
               state.domSnapshot,
@@ -229,7 +232,10 @@ export const useAppStore = create<AppStore>()(
           requestState.domSnapshotGeneration
         );
         try {
-          const result = await getApi().highlightElements(elementIds);
+          const result = await getApi().highlightElements({
+            elementIds,
+            snapshotToken: request?.snapshotToken ?? null
+          });
           set((state) => {
             const domSnapshot = mergeCurrentHighlightResult(
               state.domSnapshot,

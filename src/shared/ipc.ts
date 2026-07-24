@@ -62,6 +62,16 @@ export type HighlightResult = {
   targets: HighlightTargetStatus[];
 };
 
+export type HighlightElementRequest = {
+  elementId: string;
+  snapshotToken: string | null;
+};
+
+export type HighlightElementsRequest = {
+  elementIds: string[];
+  snapshotToken: string | null;
+};
+
 export type ElementSnapshot = {
   id: string;
   parentId?: string;
@@ -85,6 +95,7 @@ export type ElementSnapshot = {
 export type DomSnapshotResult = {
   root: ElementSnapshot | null;
   capturedAt: string;
+  snapshotToken?: string;
   nodeCount: number;
 };
 
@@ -112,8 +123,8 @@ export type IpcApi = {
   listBrowserTargets: () => Promise<BrowserTarget[]>;
   selectBrowserTarget: (targetId: string) => Promise<DomSnapshotResult>;
   getDomSnapshot: () => Promise<DomSnapshotResult>;
-  highlightElement: (elementId: string) => Promise<HighlightResult>;
-  highlightElements: (elementIds: string[]) => Promise<HighlightResult>;
+  highlightElement: (request: HighlightElementRequest) => Promise<HighlightResult>;
+  highlightElements: (request: HighlightElementsRequest) => Promise<HighlightResult>;
   setElementPickerEnabled: (enabled: boolean) => Promise<void>;
   getPickedElementId: () => Promise<string | null>;
 };

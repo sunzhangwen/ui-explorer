@@ -1,7 +1,13 @@
 import { app, BrowserWindow, ipcMain, shell } from "electron";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
-import { IPC_CHANNELS, TEST_PAGES, type AppInfo } from "../shared/ipc.js";
+import {
+  IPC_CHANNELS,
+  TEST_PAGES,
+  type AppInfo,
+  type HighlightElementRequest,
+  type HighlightElementsRequest
+} from "../shared/ipc.js";
 import { BrowserSession } from "./browserSession.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -58,8 +64,12 @@ function registerIpcHandlers(): void {
   ipcMain.handle(IPC_CHANNELS.listBrowserTargets, () => browserSession.listTargets());
   ipcMain.handle(IPC_CHANNELS.selectBrowserTarget, (_event, targetId: string) => browserSession.selectTarget(targetId));
   ipcMain.handle(IPC_CHANNELS.getDomSnapshot, () => browserSession.getDomSnapshot());
-  ipcMain.handle(IPC_CHANNELS.highlightElement, (_event, elementId: string) => browserSession.highlightElement(elementId));
-  ipcMain.handle(IPC_CHANNELS.highlightElements, (_event, elementIds: string[]) => browserSession.highlightElements(elementIds));
+  ipcMain.handle(IPC_CHANNELS.highlightElement, (_event, request: HighlightElementRequest) =>
+    browserSession.highlightElement(request)
+  );
+  ipcMain.handle(IPC_CHANNELS.highlightElements, (_event, request: HighlightElementsRequest) =>
+    browserSession.highlightElements(request)
+  );
   ipcMain.handle(IPC_CHANNELS.setElementPickerEnabled, (_event, enabled: boolean) => browserSession.setElementPickerEnabled(enabled));
   ipcMain.handle(IPC_CHANNELS.getPickedElementId, () => browserSession.getPickedElementId());
 }

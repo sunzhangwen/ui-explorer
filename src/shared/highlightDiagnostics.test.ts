@@ -31,6 +31,7 @@ function createNode(id: string, diagnostic?: SnapshotDiagnostic): ElementSnapsho
 function createSnapshot(children: ElementSnapshot[]): DomSnapshotResult {
   return {
     capturedAt: "2026-07-23T00:00:00.000Z",
+    snapshotToken: "snapshot-a",
     nodeCount: children.length + 1,
     root: {
       id: "root",
@@ -105,6 +106,7 @@ test("statuses for nodes absent from the current snapshot preserve the snapshot 
 test("a highlight response is merged only into the snapshot generation that issued it", () => {
   const original = createSnapshot([createNode("n-1")]);
   const request = captureHighlightRequest(original, "target-a", 3);
+  assert.equal(request?.snapshotToken, "snapshot-a");
   const detachedResult: HighlightResult = {
     targets: [{ elementId: "n-1", status: "detached", diagnostic: detachedDiagnostic }]
   };

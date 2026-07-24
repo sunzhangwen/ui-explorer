@@ -26,8 +26,8 @@ const api: IpcApi = {
   listBrowserTargets: () => ipcRenderer.invoke(IPC_CHANNELS.listBrowserTargets),
   selectBrowserTarget: (targetId) => ipcRenderer.invoke(IPC_CHANNELS.selectBrowserTarget, targetId),
   getDomSnapshot: () => ipcRenderer.invoke(IPC_CHANNELS.getDomSnapshot),
-  highlightElement: (elementId) => ipcRenderer.invoke(IPC_CHANNELS.highlightElement, elementId),
-  highlightElements: (elementIds) => ipcRenderer.invoke(IPC_CHANNELS.highlightElements, elementIds),
+  highlightElement: (request) => ipcRenderer.invoke(IPC_CHANNELS.highlightElement, request),
+  highlightElements: (request) => ipcRenderer.invoke(IPC_CHANNELS.highlightElements, request),
   setElementPickerEnabled: (enabled) => ipcRenderer.invoke(IPC_CHANNELS.setElementPickerEnabled, enabled),
   getPickedElementId: () => ipcRenderer.invoke(IPC_CHANNELS.getPickedElementId)
 };

@@ -1,4 +1,7 @@
 export const SNAPSHOT_SCRIPT = `(() => {
+  const snapshotToken =
+    globalThis.crypto?.randomUUID?.() ||
+    Date.now().toString(36) + "-" + Math.random().toString(36).slice(2);
   const registry = new Map();
   const elementIds = new WeakMap();
   const elementContexts = new Map();
@@ -182,12 +185,17 @@ export const SNAPSHOT_SCRIPT = `(() => {
   window.__uiExplorerElementIds = elementIds;
   window.__uiExplorerElementContexts = elementContexts;
   window.__uiExplorerDocuments = documents;
+  window.__uiExplorerSnapshotToken = snapshotToken;
   window.__uiExplorerPickedElementId = null;
-  return { root, capturedAt: new Date().toISOString(), nodeCount: sequence };
+  return { root, capturedAt: new Date().toISOString(), snapshotToken, nodeCount: sequence };
 })()`;
 
 export const HIGHLIGHT_SCRIPT = `(() => {
   const elementIds = __ELEMENT_IDS__;
+  const expectedSnapshotToken = __SNAPSHOT_TOKEN__;
+  if (!expectedSnapshotToken || window.__uiExplorerSnapshotToken !== expectedSnapshotToken) {
+    return { targets: [] };
+  }
   const registry = window.__uiExplorerElements;
   const elementContexts = window.__uiExplorerElementContexts || new Map();
   const documents = window.__uiExplorerDocuments || new Set([document]);

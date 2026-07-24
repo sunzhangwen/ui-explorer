@@ -8,6 +8,8 @@
     "src/shared/**/*.ts",
     "src/main/browserScripts.ts",
     "src/main/browserScripts.test.ts",
+    "src/main/browserSession.ts",
+    "src/main/browserSession.test.ts",
     "src/main/webSocketFrames.ts",
     "src/main/webSocketFrames.test.ts",
     "src/renderer/components/workbenchPresentation.ts",

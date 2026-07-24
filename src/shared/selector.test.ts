@@ -933,6 +933,54 @@ test("text layer attribute can make duplicate elements unique", () => {
   assert.match(edited.selector, /hasText: "Save account"/);
 });
 
+test("context-aware layers expose only constraints shared by Playwright and Selenium exports", () => {
+  const root = structuredClone(snapshot);
+  root.kind = "page";
+  const secondary = findFixtureNode(root, "secondary");
+  assert.ok(secondary);
+  secondary.role = "link";
+  const candidate = generateSelectorCandidates(root, "primary").find((item) => item.type === "playwright");
+  assert.ok(candidate);
+  const target = candidate.layers.find((layer) => layer.kind === "target");
+  assert.ok(target);
+
+  assert.equal(target.attributes.some((attribute) => attribute.name === "text"), false);
+  assert.equal(target.attributes.some((attribute) => attribute.name === "role"), false);
+  assert.equal(candidate.validation.status, "multiple");
+  assert.equal(candidate.validation.matchCount, 2);
+  const exports = buildSelectorExports(candidate);
+  assert.doesNotMatch(exports.playwright, /hasText|getByRole/);
+  assert.doesNotMatch(exports.selenium, /Save account|button role/);
+});
+
+test("a selector that uniquely matches another element is reported as a target mismatch", () => {
+  const root = structuredClone(snapshot);
+  const secondary = findFixtureNode(root, "secondary");
+  assert.ok(secondary);
+  secondary.attributes["data-testid"] = "save-draft";
+  const candidate = generateSelectorCandidates(root, "primary").find((item) => item.type === "css");
+  assert.ok(candidate);
+
+  const edited = applySelectorEdit(root, candidate, {
+    layerId: "target",
+    attributeName: "data-testid",
+    value: "save-draft"
+  });
+
+  assert.equal(String(edited.validation.status), "mismatch");
+  assert.equal(edited.validation.matchCount, 1);
+  assert.equal(edited.validation.unique, false);
+  assert.equal(edited.validation.targetConsistent, false);
+  assert.deepEqual(edited.validation.matchedElementIds, ["secondary"]);
+  assert.deepEqual(edited.validation.diagnostics, [
+    {
+      code: "target-mismatch",
+      messageKey: "selector.diagnostic.targetMismatch",
+      detail: "Selector uniquely matches a different element than the captured target."
+    }
+  ]);
+});
+
 test("xpath selector serializes enabled text attribute", () => {
   const candidate = generateSelectorCandidates(snapshot, "primary").find((item) => item.type === "xpath");
   assert.ok(candidate);
@@ -1667,7 +1715,7 @@ test("disabling a frame boundary reports matching targets in the remaining page 
 
   const edited = applySelectorEdit(root, candidate, { layerId: frame.id, enabled: false });
 
-  assert.equal(edited.validation.status, "unique");
+  assert.equal(edited.validation.status, "mismatch");
   assert.deepEqual(edited.validation.matchedElementIds, ["page-query"]);
   assert.equal(edited.validation.targetConsistent, false);
 });
@@ -1682,7 +1730,7 @@ test("disabling a shadow boundary reports matching targets in the remaining ligh
 
   const edited = applySelectorEdit(root, candidate, { layerId: shadow.id, enabled: false });
 
-  assert.equal(edited.validation.status, "unique");
+  assert.equal(edited.validation.status, "mismatch");
   assert.deepEqual(edited.validation.matchedElementIds, ["light-dom-query"]);
   assert.equal(edited.validation.targetConsistent, false);
 });
@@ -1722,7 +1770,7 @@ test("disabling an inner frame resolves target matching from the nearest enabled
     enabled: false
   });
 
-  assert.equal(edited.validation.status, "unique");
+  assert.equal(edited.validation.status, "mismatch");
   assert.deepEqual(edited.validation.matchedElementIds, ["outer-frame-fallback-target"]);
   assert.equal(edited.validation.targetConsistent, false);
 });
@@ -1762,7 +1810,7 @@ test("disabling an inner shadow resolves target matching from the nearest enable
     enabled: false
   });
 
-  assert.equal(edited.validation.status, "unique");
+  assert.equal(edited.validation.status, "mismatch");
   assert.deepEqual(edited.validation.matchedElementIds, ["outer-shadow-fallback-target"]);
   assert.equal(edited.validation.targetConsistent, false);
 });

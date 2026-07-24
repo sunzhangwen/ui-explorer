@@ -81,6 +81,7 @@ export type MessageKey =
   | "selector.copy"
   | "selector.diagnostic.missing"
   | "selector.diagnostic.multiple"
+  | "selector.diagnostic.targetMismatch"
   | "selector.diagnostic.hidden"
   | "selector.risk.dynamicId"
   | "selector.risk.lowSignal"
@@ -190,6 +191,7 @@ export const messages: Record<"zh-CN" | "en-US", Record<MessageKey, string>> = {
     "selector.copy": "复制导出内容",
     "selector.diagnostic.missing": "未匹配任何元素",
     "selector.diagnostic.multiple": "匹配到多个元素",
+    "selector.diagnostic.targetMismatch": "唯一匹配结果不是捕获目标",
     "selector.diagnostic.hidden": "目标元素不可见",
     "selector.risk.dynamicId": "疑似动态 ID",
     "selector.risk.lowSignal": "低稳定性属性",
@@ -298,6 +300,7 @@ export const messages: Record<"zh-CN" | "en-US", Record<MessageKey, string>> = {
     "selector.copy": "Copy export",
     "selector.diagnostic.missing": "No elements matched",
     "selector.diagnostic.multiple": "Multiple elements matched",
+    "selector.diagnostic.targetMismatch": "Unique match is not the captured target",
     "selector.diagnostic.hidden": "Target element is hidden",
     "selector.risk.dynamicId": "Possible dynamic ID",
     "selector.risk.lowSignal": "Low-stability attribute",

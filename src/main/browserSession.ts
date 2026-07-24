@@ -8,6 +8,8 @@ import type {
   BrowserConnectionInfo,
   BrowserTarget,
   DomSnapshotResult,
+  HighlightElementRequest,
+  HighlightElementsRequest,
   HighlightResult
 } from "../shared/ipc.js";
 import { ELEMENT_PICKER_SCRIPT, GET_PICKED_ELEMENT_SCRIPT, HIGHLIGHT_SCRIPT, SNAPSHOT_SCRIPT } from "./browserScripts.js";
@@ -223,16 +225,21 @@ export class BrowserSession {
   }
 
   async getDomSnapshot(): Promise<DomSnapshotResult> {
-    const result = await this.evaluate<DomSnapshotResult>(SNAPSHOT_SCRIPT);
-    return result;
+    return this.evaluate<DomSnapshotResult>(SNAPSHOT_SCRIPT);
   }
 
-  async highlightElement(elementId: string): Promise<HighlightResult> {
-    return this.highlightElements([elementId]);
+  async highlightElement(request: HighlightElementRequest): Promise<HighlightResult> {
+    return this.highlightElements({
+      elementIds: [request.elementId],
+      snapshotToken: request.snapshotToken
+    });
   }
 
-  async highlightElements(elementIds: string[]): Promise<HighlightResult> {
-    return this.evaluate<HighlightResult>(HIGHLIGHT_SCRIPT.replace("__ELEMENT_IDS__", JSON.stringify(elementIds)));
+  async highlightElements(request: HighlightElementsRequest): Promise<HighlightResult> {
+    const expression = HIGHLIGHT_SCRIPT
+      .replace("__ELEMENT_IDS__", JSON.stringify(request.elementIds))
+      .replace("__SNAPSHOT_TOKEN__", JSON.stringify(request.snapshotToken));
+    return this.evaluate<HighlightResult>(expression);
   }
 
   async setElementPickerEnabled(enabled: boolean): Promise<void> {
