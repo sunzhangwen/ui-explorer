@@ -331,9 +331,9 @@ test("Playwright export enters nested frames before locating shadow content", ()
   const candidate = generateSelectorCandidates(contextSnapshot, "shadow-input").find((item) => item.type === "playwright");
   assert.ok(candidate);
   const output = buildSelectorExports(candidate).playwright;
-  assert.match(output, /page\.frameLocator\('\[title="Payment frame"\]'\)/);
-  assert.match(output, /Open Shadow DOM: open-widget/);
-  assert.ok(output.indexOf("frameLocator") < output.indexOf("getByTestId(\"shadow-query\")"));
+  assert.match(output, /page\.frameLocator\('uiDom=\[title="Payment frame"\]'\)/);
+  assert.match(output, /uiShadow=/);
+  assert.ok(output.indexOf("frameLocator") < output.indexOf("uiShadow="));
 });
 
 test("Selenium export enters frames and shadow roots in order", () => {
@@ -362,7 +362,7 @@ function buildSeleniumStatements(layers: SelectorLayer[], cssSelector: string): 
 function serializeBoundaryHost(layer: SelectorLayer): string;
 ```
 
-For Playwright, start with `page`, append `.frameLocator(<host selector>)` for each enabled frame, add `// Open Shadow DOM: <host selector>` comments for enabled shadow boundaries, then append the semantic target locator. Playwright locators pierce open Shadow DOM by default; XPath candidates inside shadow contexts must fall back to a CSS/semantic locator because XPath does not pierce shadow roots.
+For Playwright, register worker-scoped `uiDom` and `uiShadow` selector engines before the page fixture is created. `uiDom` queries only the current Document/Element and `uiShadow` queries only the current host's open ShadowRoot, so every enabled or disabled boundary has the same scope semantics as snapshot validation. Use `.frameLocator(...)` for frames, including frames selected by `uiShadow`, and append the final CSS selector through the engine for the active root. This avoids the broad default open-shadow piercing behavior and does not require `Locator.contentFrame()`.
 
 For Selenium, locate and switch each frame, then assign each enabled shadow host's `.shadow_root`, finally call `find_element` on the deepest active search context.
 

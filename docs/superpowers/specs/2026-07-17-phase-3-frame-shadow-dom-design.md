@@ -58,7 +58,7 @@ Playwright TypeScript 导出按启用层生成：
 
 1. 从 `page` 开始。
 2. 每个 frame 层追加 `frameLocator(...)`。
-3. open Shadow DOM 使用 Playwright locator 的原生 open-shadow 穿透能力定位宿主内部目标，同时保留 shadow 边界注释，便于读者理解上下文路径。
+3. 为保证层级启停后的执行语义与快照验证一致，Playwright 导出注册 `uiDom` / `uiShadow` 两个 worker 级自定义 selector engine：`uiDom` 只查询当前 Document/Element，`uiShadow` 只查询当前宿主的 open ShadowRoot。frame 继续使用 `frameLocator(...)`，包括 ShadowRoot 内的 iframe；不依赖 `Locator.contentFrame()`。
 4. 最后追加 ancestor/target locator，并执行可见性断言和示例操作。
 
 Selenium Python 对 iframe 使用 `switch_to.frame(...)`。由于 Selenium 对 Shadow Root 的 API 和浏览器版本约束不同，open Shadow DOM 导出通过 `shadow_root` 逐层进入。不可穿透上下文不生成伪成功代码，而在导出结果中给出限制说明。

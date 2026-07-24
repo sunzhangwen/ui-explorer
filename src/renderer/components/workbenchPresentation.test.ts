@@ -205,6 +205,7 @@ test("diagnostic export takes priority over a selector draft from the previously
       visible: true,
       targetConsistent: true,
       matchedElementIds: ["old-target"],
+      boundaryAmbiguities: [],
       diagnostics: []
     }
   };

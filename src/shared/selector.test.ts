@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { ModuleKind, ScriptTarget, transpileModule } from "typescript";
 import {
   applySelectorEdit,
   buildSelectorExports,
@@ -811,7 +812,48 @@ const createAlternatingBoundarySnapshot = (): ElementSnapshot => {
   });
 };
 
+const createDuplicateShadowFrameSnapshot = (): ElementSnapshot => {
+  const root = createAlternatingBoundarySnapshot();
+  const outerFrameRoot = findFixtureNode(root, "alternating-outer-root");
+  const shadowHost = findFixtureNode(root, "alternating-shadow-host");
+  assert.ok(outerFrameRoot);
+  assert.ok(shadowHost);
+
+  const duplicate = cloneBranchWithSuffix(shadowHost, "duplicate");
+  const duplicateTarget = findFixtureNode(duplicate, "alternating-target-duplicate");
+  assert.ok(duplicateTarget);
+  duplicateTarget.attributes = {
+    ...duplicateTarget.attributes,
+    name: "other-alternating-query"
+  };
+  outerFrameRoot.childIds.push(duplicate.id);
+  outerFrameRoot.children.push(duplicate);
+  return root;
+};
+
 const countOccurrences = (value: string, fragment: string): number => value.split(fragment).length - 1;
+
+type TestSelectorEngine = {
+  query: (root: unknown, selector: string) => unknown;
+  queryAll: (root: unknown, selector: string) => unknown[];
+};
+
+const extractPlaywrightSelectorEngine = (output: string, factoryName: string): TestSelectorEngine => {
+  const startMarker = "// UI Explorer exact selector engines:start";
+  const endMarker = "// UI Explorer exact selector engines:end";
+  const start = output.indexOf(startMarker);
+  const end = output.indexOf(endMarker);
+  assert.notEqual(start, -1, "generated Playwright code should include exact selector engine definitions");
+  assert.ok(end > start, "generated Playwright code should close the exact selector engine definitions");
+  const source = output.slice(start + startMarker.length, end);
+  const javascript = transpileModule(source, {
+    compilerOptions: {
+      module: ModuleKind.None,
+      target: ScriptTarget.ES2022
+    }
+  }).outputText;
+  return Function(`${javascript}\nreturn ${factoryName}();`)() as TestSelectorEngine;
+};
 
 const evaluatePythonStringLiteral = (literal: string): string => {
   const quote = literal.at(0);
@@ -927,7 +969,7 @@ test("Playwright export enters nested frames before locating shadow content", ()
 
   assert.match(
     output,
-    /page\.frameLocator\('iframe\[title="Payment"\]'\)\.locator\('search-widget\[data-testid="search-widget"\]'\)\.locator\("input\[name=\\"query\\"\]"\)/
+    /page\.frameLocator\('uiDom=iframe\[title="Payment"\]'\)\.locator\('uiDom=search-widget\[data-testid="search-widget"\]'\)\.locator\('uiShadow=input\[name="query"\]'\)/
   );
 });
 
@@ -940,7 +982,7 @@ test("Playwright export falls back from XPath inside open shadow roots", () => {
   const output = buildSelectorExports(candidate).playwright;
 
   assert.match(output, /page\.frameLocator/);
-  assert.match(output, /locator\("input\[name=\\"query\\"\]"\)/);
+  assert.match(output, /locator\('uiShadow=input\[name="query"\]'\)/);
   assert.doesNotMatch(output, /locator\("\/\//);
 });
 
@@ -989,7 +1031,7 @@ test("disabling a boundary tag exports only its enabled attributes", () => {
   const edited = applySelectorEdit(root, candidate, { layerId: frame.id, tagEnabled: false });
   const output = buildSelectorExports(edited);
 
-  assert.match(output.playwright, /\.frameLocator\('\[title="Direct frame"\]'\)/);
+  assert.match(output.playwright, /\.frameLocator\('uiDom=\[title="Direct frame"\]'\)/);
   assert.match(output.selenium, /By\.CSS_SELECTOR, '\[title="Direct frame"\]'/);
   assert.doesNotMatch(output.selenium, /iframe\[title="Direct frame"\]/);
 });
@@ -1043,11 +1085,20 @@ test("tag-disabled frame boundary reports a preceding non-host selector collisio
   const edited = applySelectorEdit(root, candidate, { layerId: frame.id, tagEnabled: false });
 
   assert.equal(edited.validation.status, "multiple");
-  assert.equal(edited.validation.matchCount, 2);
+  assert.equal(edited.validation.matchCount, 1);
   assert.equal(edited.validation.unique, false);
   assert.equal(edited.validation.targetConsistent, false);
   assert.deepEqual(edited.validation.matchedElementIds, ["direct-frame-target"]);
-  assert.ok(edited.validation.diagnostics.some((diagnostic) => diagnostic.code === "not-unique"));
+  const validation = JSON.parse(JSON.stringify(edited.validation)) as {
+    boundaryAmbiguities: Array<{ kind: string; matchCount: number; blocking: boolean }>;
+  };
+  assert.deepEqual(validation.boundaryAmbiguities.map(({ kind, matchCount, blocking }) => ({ kind, matchCount, blocking })), [
+    {
+      kind: "frame",
+      matchCount: 2,
+      blocking: true
+    }
+  ]);
 });
 
 test("tag-disabled shadow boundary reports a preceding non-host selector collision as ambiguous", () => {
@@ -1075,11 +1126,20 @@ test("tag-disabled shadow boundary reports a preceding non-host selector collisi
   const edited = applySelectorEdit(root, candidate, { layerId: shadow.id, tagEnabled: false });
 
   assert.equal(edited.validation.status, "multiple");
-  assert.equal(edited.validation.matchCount, 2);
+  assert.equal(edited.validation.matchCount, 1);
   assert.equal(edited.validation.unique, false);
   assert.equal(edited.validation.targetConsistent, false);
   assert.deepEqual(edited.validation.matchedElementIds, ["direct-shadow-target"]);
-  assert.ok(edited.validation.diagnostics.some((diagnostic) => diagnostic.code === "not-unique"));
+  const validation = JSON.parse(JSON.stringify(edited.validation)) as {
+    boundaryAmbiguities: Array<{ kind: string; matchCount: number; blocking: boolean }>;
+  };
+  assert.deepEqual(validation.boundaryAmbiguities.map(({ kind, matchCount, blocking }) => ({ kind, matchCount, blocking })), [
+    {
+      kind: "shadow",
+      matchCount: 2,
+      blocking: true
+    }
+  ]);
 });
 
 test("boundary layers omit semantic role constraints that CSS exports cannot represent", () => {
@@ -1141,7 +1201,7 @@ test("Playwright and Selenium exports enter two nested frames in order", () => {
 
   assert.match(
     output.playwright,
-    /page\.frameLocator\('iframe\[title="Outer frame"\]'\)\.frameLocator\('iframe\[title="Inner frame"\]'\)\.locator\("input\[name=\\"nested-frame-query\\"\]"\)/
+    /page\.frameLocator\('uiDom=iframe\[title="Outer frame"\]'\)\.frameLocator\('uiDom=iframe\[title="Inner frame"\]'\)\.locator\('uiDom=input\[name="nested-frame-query"\]'\)/
   );
   assert.equal(countOccurrences(output.playwright, 'iframe[title="Inner frame"]'), 1);
   assert.match(
@@ -1163,7 +1223,7 @@ test("Playwright export uses each nested shadow boundary as executable scope", (
 
   assert.match(
     output,
-    /page\.locator\('outer-widget\[data-testid="outer-shadow-host"\]'\)\.locator\('inner-widget\[data-testid="inner-shadow-host"\]'\)\.locator\("input\[name=\\"nested-shadow-query\\"\]"\)/
+    /page\.locator\('uiDom=outer-widget\[data-testid="outer-shadow-host"\]'\)\.locator\('uiShadow=inner-widget\[data-testid="inner-shadow-host"\]'\)\.locator\('uiShadow=input\[name="nested-shadow-query"\]'\)/
   );
 
   const innerShadow = candidate.layers.find(
@@ -1174,7 +1234,58 @@ test("Playwright export uses each nested shadow boundary as executable scope", (
   const editedOutput = buildSelectorExports(edited).playwright;
 
   assert.doesNotMatch(editedOutput, /inner-widget\[data-testid="inner-shadow-host"\]/);
+  assert.match(editedOutput, /\.locator\('uiShadow=input\[name="nested-shadow-query"\]'\)/);
   assert.notEqual(editedOutput, output);
+});
+
+test("Playwright exact selector engines keep light DOM and ShadowRoot queries separate", () => {
+  const candidate = generateSelectorCandidates(createDirectShadowSnapshot(), "direct-shadow-target").find(
+    (item) => item.type === "css"
+  );
+  assert.ok(candidate);
+  const output = buildSelectorExports(candidate).playwright;
+  assert.ok(output.indexOf('selectors.register("uiDom"') < output.indexOf('test("locates captured element"'));
+  assert.ok(output.indexOf('selectors.register("uiShadow"') < output.indexOf('test("locates captured element"'));
+  assert.equal(countOccurrences(output, "{ contentScript: true }"), 2);
+  assert.match(output, /\{ auto: true, scope: "worker" \}/);
+  const domEngine = extractPlaywrightSelectorEngine(output, "createUiDomSelectorEngine");
+  const shadowEngine = extractPlaywrightSelectorEngine(output, "createUiShadowSelectorEngine");
+  const lightTarget = { id: "light-target" };
+  const shadowTarget = { id: "shadow-target" };
+  const nestedShadowTarget = { id: "nested-shadow-target" };
+  const createRoot = (matches: Record<string, unknown[]>) => ({
+    querySelector: (selector: string) => matches[selector]?.[0] ?? null,
+    querySelectorAll: (selector: string) => matches[selector] ?? []
+  });
+  const nestedHost = {
+    ...createRoot({}),
+    shadowRoot: createRoot({ input: [nestedShadowTarget] })
+  };
+  const shadowRoot = createRoot({ input: [shadowTarget], "nested-widget": [nestedHost] });
+  const host = {
+    ...createRoot({ input: [lightTarget] }),
+    shadowRoot
+  };
+
+  assert.deepEqual(domEngine.queryAll(host, "input"), [lightTarget]);
+  assert.equal(domEngine.query(host, "input"), lightTarget);
+  assert.deepEqual(shadowEngine.queryAll(host, "input"), [shadowTarget]);
+  assert.equal(shadowEngine.query(host, "input"), shadowTarget);
+  assert.deepEqual(shadowEngine.queryAll(nestedHost, "input"), [nestedShadowTarget]);
+  assert.deepEqual(shadowEngine.queryAll(createRoot({ input: [lightTarget] }), "input"), []);
+});
+
+test("Playwright page scope does not pierce a sibling open ShadowRoot", () => {
+  const root = createDirectShadowSnapshot();
+  appendParentContextTarget(root, "light-dom-query", "direct-shadow-query");
+  const candidate = generateSelectorCandidates(root, "light-dom-query").find((item) => item.type === "css");
+  assert.ok(candidate);
+  assert.equal(candidate.validation.status, "unique");
+
+  const output = buildSelectorExports(candidate).playwright;
+
+  assert.match(output, /createUiDomSelectorEngine/);
+  assert.match(output, /const element = page\.locator\('uiDom=input\[name="direct-shadow-query"\]'\)/);
 });
 
 test("frame shadow nested frame exports keep each traversal step in its current context", () => {
@@ -1190,8 +1301,9 @@ test("frame shadow nested frame exports keep each traversal step in its current 
 
   assert.match(
     output.playwright,
-    /page\.frameLocator\('iframe\[title="Alternating outer frame"\]'\)\.locator\('nested-widget\[data-testid="alternating-shadow-host"\]'\)\.locator\('iframe\[title="Alternating inner frame"\]'\)\.contentFrame\(\)\.locator\("input\[name=\\"alternating-query\\"\]"\)/
+    /page\.frameLocator\('uiDom=iframe\[title="Alternating outer frame"\]'\)\.locator\('uiDom=nested-widget\[data-testid="alternating-shadow-host"\]'\)\.frameLocator\('uiShadow=iframe\[title="Alternating inner frame"\]'\)\.locator\('uiDom=input\[name="alternating-query"\]'\)/
   );
+  assert.doesNotMatch(output.playwright, /\.contentFrame\(\)/);
   assert.equal(countOccurrences(output.playwright, 'iframe[title="Alternating inner frame"]'), 1);
   assert.match(
     output.selenium,
@@ -1202,6 +1314,32 @@ test("frame shadow nested frame exports keep each traversal step in its current 
     candidate.layers.some((layer) => layer.kind === "ancestor" && layer.nodeId === "alternating-inner-frame"),
     false
   );
+});
+
+test("frame boundaries aggregate matches across duplicate shadow parent contexts", () => {
+  const root = createDuplicateShadowFrameSnapshot();
+  const candidate = generateSelectorCandidates(root, "alternating-target").find(
+    (item) => item.type === "css"
+  );
+  assert.ok(candidate);
+
+  assert.equal(candidate.validation.status, "multiple");
+  assert.equal(candidate.validation.matchCount, 1);
+  assert.equal(candidate.validation.unique, false);
+  assert.equal(candidate.validation.targetConsistent, false);
+  assert.deepEqual(candidate.validation.matchedElementIds, ["alternating-target"]);
+  assert.deepEqual(
+    candidate.validation.boundaryAmbiguities.map(({ kind, matchCount, blocking }) => ({
+      kind,
+      matchCount,
+      blocking
+    })),
+    [
+      { kind: "shadow", matchCount: 2, blocking: false },
+      { kind: "frame", matchCount: 2, blocking: true }
+    ]
+  );
+  assert.match(candidate.validation.diagnostics[0]?.detail ?? "", /frame-2.*2 hosts/i);
 });
 
 test("Selenium boundary selector Python literal preserves quotes and backslashes", () => {
@@ -1239,7 +1377,7 @@ test("boundary selector literals escape CSS controls and JavaScript line separat
   assert.ok(playwrightLiteral);
   assert.ok(seleniumLiteral);
 
-  assert.equal(Function(`return ${playwrightLiteral}`)(), expectedSelector);
+  assert.equal(Function(`return ${playwrightLiteral}`)(), `uiDom=${expectedSelector}`);
   assert.equal(evaluatePythonStringLiteral(seleniumLiteral), expectedSelector);
 });
 
@@ -1261,6 +1399,11 @@ test("JSON export includes ordered context chains and layer diagnostics", () => 
       code: "not-unique",
       messageKey: "selector.diagnostic.multiple",
       detail: "Selector matches 2 elements."
+    },
+    {
+      code: "not-unique",
+      messageKey: "selector.diagnostic.multiple",
+      detail: "Boundary layer frame-1 matches 2 hosts in one parent context; Playwright frame selection is strict."
     }
   ]);
   assert.deepEqual(output.diagnostics.layers, []);
@@ -1435,17 +1578,11 @@ test("duplicate frame hosts stay ambiguous when only the second context contains
   assert.ok(candidate);
 
   assert.equal(candidate.validation.status, "multiple");
-  assert.equal(candidate.validation.matchCount, 2);
+  assert.equal(candidate.validation.matchCount, 1);
   assert.equal(candidate.validation.unique, false);
   assert.equal(candidate.validation.targetConsistent, false);
   assert.deepEqual(candidate.validation.matchedElementIds, ["direct-frame-target-duplicate"]);
-  assert.deepEqual(candidate.validation.diagnostics, [
-    {
-      code: "not-unique",
-      messageKey: "selector.diagnostic.multiple",
-      detail: "Selector matches 2 elements."
-    }
-  ]);
+  assert.match(candidate.validation.diagnostics[0]?.detail ?? "", /frame-1.*2 hosts/i);
 });
 
 test("duplicate shadow hosts are counted by runtime-exportable boundary constraints", () => {
@@ -1475,17 +1612,37 @@ test("duplicate shadow hosts stay ambiguous when only the second context contain
   assert.ok(candidate);
 
   assert.equal(candidate.validation.status, "multiple");
-  assert.equal(candidate.validation.matchCount, 2);
+  assert.equal(candidate.validation.matchCount, 1);
   assert.equal(candidate.validation.unique, false);
   assert.equal(candidate.validation.targetConsistent, false);
   assert.deepEqual(candidate.validation.matchedElementIds, ["direct-shadow-target-duplicate"]);
-  assert.deepEqual(candidate.validation.diagnostics, [
-    {
-      code: "not-unique",
-      messageKey: "selector.diagnostic.multiple",
-      detail: "Selector matches 2 elements."
-    }
-  ]);
+  assert.match(candidate.validation.diagnostics[0]?.detail ?? "", /shadow-1.*first matching host/i);
+});
+
+test("duplicate shadow hosts remain executable when only the first host contains the target", () => {
+  const root = createDuplicateShadowHostSnapshot();
+  const secondTarget = findFixtureNode(root, "direct-shadow-target-duplicate");
+  assert.ok(secondTarget);
+  secondTarget.attributes = {
+    ...secondTarget.attributes,
+    name: "other-shadow-query"
+  };
+
+  const candidate = generateSelectorCandidates(root, "direct-shadow-target")[0];
+  assert.ok(candidate);
+
+  assert.equal(candidate.validation.status, "unique");
+  assert.equal(candidate.validation.matchCount, 1);
+  assert.equal(candidate.validation.unique, true);
+  assert.equal(candidate.validation.targetConsistent, true);
+  assert.deepEqual(candidate.validation.matchedElementIds, ["direct-shadow-target"]);
+  const validation = JSON.parse(JSON.stringify(candidate.validation)) as {
+    boundaryAmbiguities: Array<{ kind: string; matchCount: number; blocking: boolean }>;
+  };
+  assert.deepEqual(
+    validation.boundaryAmbiguities.map(({ kind, matchCount, blocking }) => ({ kind, matchCount, blocking })),
+    [{ kind: "shadow", matchCount: 2, blocking: false }]
+  );
 });
 
 test("disabling a shadow layer recalculates context validation", () => {

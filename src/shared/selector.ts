@@ -45,7 +45,17 @@ export type SelectorValidation = {
   visible: boolean;
   targetConsistent: boolean;
   matchedElementIds: string[];
+  boundaryAmbiguities: SelectorBoundaryAmbiguity[];
   diagnostics: SelectorRisk[];
+};
+
+export type SelectorBoundaryAmbiguity = {
+  layerId: string;
+  kind: "frame" | "shadow";
+  parentContext: ContextBoundary[];
+  parentContextCount: number;
+  matchCount: number;
+  blocking: boolean;
 };
 
 export type SelectorCandidate = {
@@ -66,12 +76,15 @@ export type SelectorExports = {
 
 type BoundarySelectorMatch = {
   layerId: string;
+  kind: "frame" | "shadow";
   parentContext: ContextBoundary[];
+  parentContextCount: number;
   matchCount: number;
 };
 
 type BoundaryResolution = {
   contexts: ContextBoundary[][];
+  seleniumContext: ContextBoundary[] | null;
   selectorMatches: BoundarySelectorMatch[];
 };
 
@@ -98,6 +111,36 @@ export type SelectorEdit =
 const HIGH_VALUE_ATTRIBUTES = ["data-testid", "data-test", "data-cy", "aria-label"] as const;
 const MEDIUM_VALUE_ATTRIBUTES = ["name", "placeholder", "title", "type"] as const;
 const TEXT_ATTRIBUTE_NAME = "text";
+const PLAYWRIGHT_DOM_ENGINE = "uiDom";
+const PLAYWRIGHT_SHADOW_ENGINE = "uiShadow";
+const PLAYWRIGHT_EXACT_SELECTOR_ENGINES = `// UI Explorer exact selector engines:start
+type UiSelectorRoot = Document | ShadowRoot | Element;
+
+function createUiDomSelectorEngine() {
+  return {
+    query(root: UiSelectorRoot, selector: string) {
+      return root.querySelector(selector);
+    },
+    queryAll(root: UiSelectorRoot, selector: string) {
+      return Array.from(root.querySelectorAll(selector));
+    }
+  };
+}
+
+function createUiShadowSelectorEngine() {
+  const getShadowRoot = (root: UiSelectorRoot): ShadowRoot | null =>
+    "shadowRoot" in root ? root.shadowRoot : null;
+  return {
+    query(root: UiSelectorRoot, selector: string) {
+      return getShadowRoot(root)?.querySelector(selector) ?? null;
+    },
+    queryAll(root: UiSelectorRoot, selector: string) {
+      const shadowRoot = getShadowRoot(root);
+      return shadowRoot ? Array.from(shadowRoot.querySelectorAll(selector)) : [];
+    }
+  };
+}
+// UI Explorer exact selector engines:end`;
 
 export function generateSelectorCandidates(root: ElementSnapshot | null, targetId: string | null): SelectorCandidate[] {
   if (!root || !targetId) {
@@ -154,6 +197,7 @@ export function applySelectorEdit(
 export function buildSelectorExports(candidate: SelectorCandidate): SelectorExports {
   const cssSelector = serializeContentCss(candidate.layers);
   const playwrightLocator = buildPlaywrightLocator(candidate.layers);
+  const exactPlaywrightContext = hasContextLayers(candidate.layers);
   const seleniumStatements = buildSeleniumStatements(candidate.layers, cssSelector);
   const layerDiagnostics = candidate.layers.flatMap((layer) =>
     layer.diagnostic ? [{ layerId: layer.id, ...layer.diagnostic }] : []
@@ -197,7 +241,30 @@ export function buildSelectorExports(candidate: SelectorCandidate): SelectorExpo
 
   return {
     json,
-    playwright: `import { test, expect } from "@playwright/test";
+    playwright: exactPlaywrightContext
+      ? `import { test as base, expect } from "@playwright/test";
+
+${PLAYWRIGHT_EXACT_SELECTOR_ENGINES}
+
+const test = base.extend<{}, { uiExplorerSelectors: void }>({
+  uiExplorerSelectors: [
+    async ({ playwright }, use) => {
+      await playwright.selectors.register("${PLAYWRIGHT_DOM_ENGINE}", createUiDomSelectorEngine, { contentScript: true });
+      await playwright.selectors.register("${PLAYWRIGHT_SHADOW_ENGINE}", createUiShadowSelectorEngine, { contentScript: true });
+      await use();
+    },
+    { auto: true, scope: "worker" }
+  ]
+});
+
+test("locates captured element", async ({ page }) => {
+  await page.goto("https://example.com");
+  const element = ${playwrightLocator};
+  await expect(element).toBeVisible();
+  await element.click();
+});
+`
+      : `import { test, expect } from "@playwright/test";
 
 test("locates captured element", async ({ page }) => {
   await page.goto("https://example.com");
@@ -241,6 +308,10 @@ export function buildUnavailableContextExports(node: ElementSnapshot): SelectorE
 }
 
 function buildPlaywrightLocator(layers: SelectorLayer[]): string {
+  if (hasContextLayers(layers)) {
+    return buildExactContextPlaywrightLocator(layers);
+  }
+
   let locator = "page";
   let scopeKind: "page" | "frame" | "locator" = "page";
 
@@ -275,6 +346,36 @@ function buildPlaywrightLocator(layers: SelectorLayer[]): string {
   }
 
   return locator + serializeSelector("playwright", [targetLayer]).slice("page".length);
+}
+
+function buildExactContextPlaywrightLocator(layers: SelectorLayer[]): string {
+  let locator = "page";
+  let scope: "dom" | "shadow" = "dom";
+
+  for (const layer of layers) {
+    if (!layer.enabled || (layer.kind !== "frame" && layer.kind !== "shadow")) {
+      continue;
+    }
+
+    const engine = scope === "shadow" ? PLAYWRIGHT_SHADOW_ENGINE : PLAYWRIGHT_DOM_ENGINE;
+    const selector = quoteJsSingle(`${engine}=${serializeBoundaryHost(layer)}`);
+    if (layer.kind === "frame") {
+      locator += `.frameLocator(${selector})`;
+      scope = "dom";
+    } else {
+      locator += `.locator(${selector})`;
+      scope = "shadow";
+    }
+  }
+
+  const engine = scope === "shadow" ? PLAYWRIGHT_SHADOW_ENGINE : PLAYWRIGHT_DOM_ENGINE;
+  return `${locator}.locator(${quoteJsSingle(`${engine}=${serializeContentCss(layers)}`)})`;
+}
+
+function hasContextLayers(layers: SelectorLayer[]): boolean {
+  return layers.some(
+    (layer) => layer.kind === "page" || layer.kind === "frame" || layer.kind === "shadow"
+  );
 }
 
 function buildSeleniumStatements(layers: SelectorLayer[], cssSelector: string): string[] {
@@ -521,16 +622,31 @@ function validateSelector(
       matchesActiveTargetLayer(root, node, layers, boundaryResolution?.contexts ?? null)
     )
     .map((node) => node.id);
-  const maxBoundaryMatchCount =
-    boundaryResolution?.selectorMatches.reduce(
-      (maximum, match) => Math.max(maximum, match.matchCount),
-      0
-    ) ?? 0;
-  const hasAmbiguousBoundary = maxBoundaryMatchCount > 1;
-  const matchCount = hasAmbiguousBoundary
-    ? Math.max(matchedElementIds.length, maxBoundaryMatchCount)
-    : matchedElementIds.length;
-  const status: SelectorValidationStatus = hasAmbiguousBoundary
+  const resolvedSeleniumContext = boundaryResolution?.seleniumContext;
+  const seleniumMatchedElementIds =
+    resolvedSeleniumContext === null
+      ? []
+      : flattenElementSnapshot(root)
+          .filter((node) =>
+            matchesActiveTargetLayer(
+              root,
+              node,
+              layers,
+              resolvedSeleniumContext ? [resolvedSeleniumContext] : null
+            )
+          )
+          .map((node) => node.id);
+  const seleniumSelectsTarget = seleniumMatchedElementIds[0] === targetId;
+  const boundaryAmbiguities: SelectorBoundaryAmbiguity[] =
+    boundaryResolution?.selectorMatches
+      .filter((match) => match.matchCount > 1)
+      .map((match) => ({
+        ...match,
+        blocking: match.kind === "frame" || !seleniumSelectsTarget
+      })) ?? [];
+  const hasBlockingBoundary = boundaryAmbiguities.some((ambiguity) => ambiguity.blocking);
+  const matchCount = matchedElementIds.length;
+  const status: SelectorValidationStatus = hasBlockingBoundary
     ? "multiple"
     : matchCount === 0
       ? "missing"
@@ -549,11 +665,27 @@ function validateSelector(
     });
   }
 
-  if (status === "multiple") {
+  if (matchCount > 1) {
     diagnostics.push({
       code: "not-unique",
       messageKey: "selector.diagnostic.multiple",
       detail: `Selector matches ${matchCount} elements.`
+    });
+  }
+
+  const blockingBoundary = boundaryAmbiguities.find((ambiguity) => ambiguity.blocking);
+  if (blockingBoundary) {
+    diagnostics.push({
+      code: "not-unique",
+      messageKey: "selector.diagnostic.multiple",
+      detail:
+        blockingBoundary.kind === "frame"
+          ? `Boundary layer ${blockingBoundary.layerId} matches ${blockingBoundary.matchCount} hosts ${
+              blockingBoundary.parentContextCount === 1
+                ? "in one parent context"
+                : `across ${blockingBoundary.parentContextCount} parent contexts`
+            }; Playwright frame selection is strict.`
+          : `Boundary layer ${blockingBoundary.layerId} matches ${blockingBoundary.matchCount} hosts, but Selenium enters the first matching host and cannot reach the captured target.`
     });
   }
 
@@ -570,8 +702,12 @@ function validateSelector(
     matchCount,
     unique: status === "unique",
     visible,
-    targetConsistent: !hasAmbiguousBoundary && matchedElementIds.includes(targetId),
+    targetConsistent:
+      status === "unique" &&
+      matchedElementIds[0] === targetId &&
+      seleniumSelectsTarget,
     matchedElementIds,
+    boundaryAmbiguities,
     diagnostics
   };
 }
@@ -661,6 +797,7 @@ function resolveEnabledBoundaryContexts(
 ): BoundaryResolution {
   const nodes = flattenElementSnapshot(root);
   let contexts: ContextBoundary[][] = [[]];
+  let seleniumContext: ContextBoundary[] | null = [];
   const selectorMatches: BoundarySelectorMatch[] = [];
 
   for (const layer of layers) {
@@ -679,29 +816,31 @@ function resolveEnabledBoundaryContexts(
       );
       selectorMatches.push({
         layerId: layer.id,
+        kind: layer.kind,
         parentContext: context,
+        parentContextCount: matchingHosts.length > 0 ? 1 : 0,
         matchCount: matchingHosts.length
       });
 
       for (const host of matchingHosts) {
-        const boundaryRoot = host.children.find((child) => {
-          if (child.kind !== layer.kind || child.context?.length !== context.length + 1) {
-            return false;
-          }
-
-          const parentContext = child.context.slice(0, -1);
-          const boundary = child.context.at(-1);
-          return (
-            contextSignaturesMatch(parentContext, context) &&
-            boundary?.kind === layer.kind &&
-            boundary.hostNodeId === host.id
-          );
-        });
-
-        if (boundaryRoot?.context) {
-          nextContexts.push(boundaryRoot.context);
+        const boundaryContext = findBoundaryRootContext(host, layer, context);
+        if (boundaryContext) {
+          nextContexts.push(boundaryContext);
         }
       }
+    }
+
+    if (seleniumContext) {
+      const firstSeleniumHost = nodes.find(
+        (node) =>
+          node.nodeType === 1 &&
+          node.tagName &&
+          contextSignaturesMatch(node.context ?? [], seleniumContext ?? []) &&
+          matchesBoundaryHostLayer(node, layer)
+      );
+      seleniumContext = firstSeleniumHost
+        ? findBoundaryRootContext(firstSeleniumHost, layer, seleniumContext)
+        : null;
     }
 
     contexts = deduplicateContexts(nextContexts);
@@ -712,8 +851,63 @@ function resolveEnabledBoundaryContexts(
 
   return {
     contexts,
-    selectorMatches
+    seleniumContext,
+    selectorMatches: aggregateBoundarySelectorMatches(selectorMatches)
   };
+}
+
+function aggregateBoundarySelectorMatches(
+  matches: BoundarySelectorMatch[]
+): BoundarySelectorMatch[] {
+  const byLayer = new Map<string, BoundarySelectorMatch>();
+  for (const match of matches) {
+    const current = byLayer.get(match.layerId);
+    if (!current) {
+      byLayer.set(match.layerId, { ...match });
+      continue;
+    }
+
+    current.parentContext = commonContextPrefix(current.parentContext, match.parentContext);
+    current.parentContextCount += match.parentContextCount;
+    current.matchCount += match.matchCount;
+  }
+  return [...byLayer.values()];
+}
+
+function commonContextPrefix(
+  left: ContextBoundary[],
+  right: ContextBoundary[]
+): ContextBoundary[] {
+  const length = Math.min(left.length, right.length);
+  let index = 0;
+  while (
+    index < length &&
+    left[index]?.kind === right[index]?.kind &&
+    left[index]?.hostNodeId === right[index]?.hostNodeId
+  ) {
+    index += 1;
+  }
+  return left.slice(0, index);
+}
+
+function findBoundaryRootContext(
+  host: ElementSnapshot,
+  layer: SelectorLayer,
+  parentContext: ContextBoundary[]
+): ContextBoundary[] | null {
+  const boundaryRoot = host.children.find((child) => {
+    if (child.kind !== layer.kind || child.context?.length !== parentContext.length + 1) {
+      return false;
+    }
+
+    const boundary = child.context.at(-1);
+    return (
+      contextSignaturesMatch(child.context.slice(0, -1), parentContext) &&
+      boundary?.kind === layer.kind &&
+      boundary.hostNodeId === host.id
+    );
+  });
+  return boundaryRoot?.context ?? null;
 }
 
 function matchesBoundaryHostLayer(node: ElementSnapshot, layer: SelectorLayer): boolean {
