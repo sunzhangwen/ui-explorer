@@ -1,3 +1,5 @@
+import type { TableExportFormat } from "./tableExport.js";
+
 export type ThemeName = "light" | "dark";
 export type Locale = "zh-CN" | "en-US";
 
@@ -114,6 +116,17 @@ export type BrowserConnectionDiagnostics = {
   rawTargetTypes: string[];
 };
 
+export type TableExportSaveRequest = {
+  format: TableExportFormat;
+  content: string;
+  suggestedBaseName: string;
+};
+
+export type TableExportSaveResult =
+  | { status: "saved"; filePath: string }
+  | { status: "cancelled" }
+  | { status: "error"; message: string };
+
 export type IpcApi = {
   ping: () => Promise<string>;
   getAppInfo: () => Promise<AppInfo>;
@@ -127,6 +140,7 @@ export type IpcApi = {
   highlightElements: (request: HighlightElementsRequest) => Promise<HighlightResult>;
   setElementPickerEnabled: (enabled: boolean) => Promise<void>;
   getPickedElementId: () => Promise<string | null>;
+  saveTableExport: (request: TableExportSaveRequest) => Promise<TableExportSaveResult>;
 };
 
 export const TEST_PAGES: TestPage[] = [
@@ -180,5 +194,6 @@ export const IPC_CHANNELS = {
   highlightElement: "browser:highlight-element",
   highlightElements: "browser:highlight-elements",
   setElementPickerEnabled: "browser:set-element-picker-enabled",
-  getPickedElementId: "browser:get-picked-element-id"
+  getPickedElementId: "browser:get-picked-element-id",
+  saveTableExport: "table:save-export"
 } as const;
