@@ -347,7 +347,11 @@ function getApi(): IpcApi {
     highlightElement: async () => ({ targets: [] }),
     highlightElements: async () => ({ targets: [] }),
     setElementPickerEnabled: async () => undefined,
-    getPickedElementId: async () => null
+    getPickedElementId: async () => null,
+    saveTableExport: async () => ({
+      status: "error",
+      message: "Electron IPC is not available."
+    })
   };
 
   return window.uiExplorer ?? fallbackApi;

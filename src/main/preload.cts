@@ -14,7 +14,8 @@ const IPC_CHANNELS = {
   highlightElement: "browser:highlight-element",
   highlightElements: "browser:highlight-elements",
   setElementPickerEnabled: "browser:set-element-picker-enabled",
-  getPickedElementId: "browser:get-picked-element-id"
+  getPickedElementId: "browser:get-picked-element-id",
+  saveTableExport: "table:save-export"
 } as const;
 
 const api: IpcApi = {
@@ -29,7 +30,8 @@ const api: IpcApi = {
   highlightElement: (request) => ipcRenderer.invoke(IPC_CHANNELS.highlightElement, request),
   highlightElements: (request) => ipcRenderer.invoke(IPC_CHANNELS.highlightElements, request),
   setElementPickerEnabled: (enabled) => ipcRenderer.invoke(IPC_CHANNELS.setElementPickerEnabled, enabled),
-  getPickedElementId: () => ipcRenderer.invoke(IPC_CHANNELS.getPickedElementId)
+  getPickedElementId: () => ipcRenderer.invoke(IPC_CHANNELS.getPickedElementId),
+  saveTableExport: (request) => ipcRenderer.invoke(IPC_CHANNELS.saveTableExport, request)
 };
 
 contextBridge.exposeInMainWorld("uiExplorer", api);

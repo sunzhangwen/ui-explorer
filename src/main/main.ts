@@ -1,4 +1,5 @@
-import { app, BrowserWindow, ipcMain, shell } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
+import { writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import {
@@ -6,8 +7,16 @@ import {
   TEST_PAGES,
   type AppInfo,
   type HighlightElementRequest,
-  type HighlightElementsRequest
+  type HighlightElementsRequest,
+  type TableExportSaveRequest,
+  type TableExportSaveResult
 } from "../shared/ipc.js";
+import { isTableExportFormat } from "../shared/tableExport.js";
+import {
+  getTableFileOptions,
+  prepareTableFileContent,
+  sanitizeTableExportBaseName
+} from "../shared/tableFile.js";
 import { BrowserSession } from "./browserSession.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -72,6 +81,42 @@ function registerIpcHandlers(): void {
   );
   ipcMain.handle(IPC_CHANNELS.setElementPickerEnabled, (_event, enabled: boolean) => browserSession.setElementPickerEnabled(enabled));
   ipcMain.handle(IPC_CHANNELS.getPickedElementId, () => browserSession.getPickedElementId());
+  ipcMain.handle(
+    IPC_CHANNELS.saveTableExport,
+    async (_event, request: TableExportSaveRequest): Promise<TableExportSaveResult> => {
+      if (
+        !request ||
+        !isTableExportFormat(request.format) ||
+        typeof request.content !== "string" ||
+        typeof request.suggestedBaseName !== "string"
+      ) {
+        return { status: "error", message: "Invalid table export request." };
+      }
+
+      const options = getTableFileOptions(request.format);
+      const result = await dialog.showSaveDialog({
+        defaultPath: `${sanitizeTableExportBaseName(request.suggestedBaseName)}.${options.extension}`,
+        filters: [{ name: options.label, extensions: [options.extension] }]
+      });
+      if (result.canceled || !result.filePath) {
+        return { status: "cancelled" };
+      }
+
+      try {
+        await writeFile(
+          result.filePath,
+          prepareTableFileContent(request.format, request.content),
+          "utf8"
+        );
+        return { status: "saved", filePath: result.filePath };
+      } catch (error) {
+        return {
+          status: "error",
+          message: error instanceof Error ? error.message : String(error)
+        };
+      }
+    }
+  );
 }
 
 app.whenReady().then(() => {

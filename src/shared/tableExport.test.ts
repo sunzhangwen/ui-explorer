@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildAllTableExports, buildTableExport } from "./tableExport.js";
+import { buildAllTableExports, buildTableExport, isTableExportFormat } from "./tableExport.js";
 import type { ExtractedTable } from "./tableExtraction.js";
 
 function table(headers: string[], rows: string[][]): ExtractedTable {
@@ -47,4 +47,11 @@ test("all formats preserve normalized header and row order", () => {
     { Team: "Identity", "Q1 / Selectors": "Migration", "Q1 / Pass rate": "Migration" }
   ]);
   assert.match(exports.markdown, /\| Identity \| Migration \| Migration \|/);
+});
+
+test("recognizes only supported table export formats at runtime", () => {
+  assert.equal(isTableExportFormat("csv"), true);
+  assert.equal(isTableExportFormat("markdown"), true);
+  assert.equal(isTableExportFormat("xlsx"), false);
+  assert.equal(isTableExportFormat(null), false);
 });

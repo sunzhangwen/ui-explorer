@@ -6,6 +6,10 @@ export type TableExportFormat = (typeof TABLE_EXPORT_FORMATS)[number];
 
 export type TableExports = Record<TableExportFormat, string>;
 
+export function isTableExportFormat(value: unknown): value is TableExportFormat {
+  return typeof value === "string" && TABLE_EXPORT_FORMATS.some((format) => format === value);
+}
+
 export function buildTableExport(table: ExtractedTable, format: TableExportFormat): string {
   switch (format) {
     case "csv":
