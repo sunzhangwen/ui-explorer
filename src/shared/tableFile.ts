@@ -19,6 +19,13 @@ export function prepareTableFileContent(format: TableExportFormat, content: stri
   return format === "csv" ? `\uFEFF${content}` : content;
 }
 
+export function ensureTableFileExtension(filePath: string, format: TableExportFormat): string {
+  const extension = getTableFileOptions(format).extension;
+  return filePath.toLowerCase().endsWith(`.${extension}`)
+    ? filePath
+    : `${filePath}.${extension}`;
+}
+
 export function sanitizeTableExportBaseName(value: string): string {
   const trimmed = value.trim();
   if (!trimmed || trimmed.includes("..")) {

@@ -13,6 +13,7 @@ import {
 } from "../shared/ipc.js";
 import { isTableExportFormat } from "../shared/tableExport.js";
 import {
+  ensureTableFileExtension,
   getTableFileOptions,
   prepareTableFileContent,
   sanitizeTableExportBaseName
@@ -103,12 +104,13 @@ function registerIpcHandlers(): void {
       }
 
       try {
+        const filePath = ensureTableFileExtension(result.filePath, request.format);
         await writeFile(
-          result.filePath,
+          filePath,
           prepareTableFileContent(request.format, request.content),
           "utf8"
         );
-        return { status: "saved", filePath: result.filePath };
+        return { status: "saved", filePath };
       } catch (error) {
         return {
           status: "error",

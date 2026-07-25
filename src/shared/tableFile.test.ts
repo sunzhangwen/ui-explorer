@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  ensureTableFileExtension,
   getTableFileOptions,
   prepareTableFileContent,
   sanitizeTableExportBaseName
@@ -24,4 +25,10 @@ test("adds a UTF-8 BOM only to saved CSV payloads", () => {
 test("sanitizes suggested file names without allowing path components", () => {
   assert.equal(sanitizeTableExportBaseName(' Quarterly: "Metrics" '), "Quarterly- -Metrics-");
   assert.equal(sanitizeTableExportBaseName("../"), "table-export");
+});
+
+test("enforces the selected export extension on saved paths", () => {
+  assert.equal(ensureTableFileExtension("D:\\exports\\metrics", "csv"), "D:\\exports\\metrics.csv");
+  assert.equal(ensureTableFileExtension("D:\\exports\\metrics.CSV", "csv"), "D:\\exports\\metrics.CSV");
+  assert.equal(ensureTableFileExtension("D:\\exports\\metrics.txt", "json"), "D:\\exports\\metrics.txt.json");
 });
