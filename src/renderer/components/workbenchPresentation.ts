@@ -12,6 +12,7 @@ import {
   type SelectorExports,
   type SelectorLayer
 } from "../../shared/selector.js";
+import type { ExtractedTable } from "../../shared/tableExtraction.js";
 import type { MessageKey } from "../i18n/messages.js";
 
 const SELECTOR_LAYER_MESSAGE_KEYS = {
@@ -107,6 +108,18 @@ export function buildWorkbenchExports(
     return buildUnavailableContextExports(selectedElement);
   }
   return selectedCandidate ? buildSelectorExports(selectedCandidate) : null;
+}
+
+export function getTableSummary(
+  table: ExtractedTable | null
+): { columns: number; rows: number; headerDepth: number } | null {
+  return table
+    ? {
+        columns: table.headers.length,
+        rows: table.rows.length,
+        headerDepth: table.headerDepth
+      }
+    : null;
 }
 
 function getTreeNodeSearchText(node: ElementSnapshot): string {

@@ -14,6 +14,7 @@ export type MessageKey =
   | "panel.explorer"
   | "panel.properties"
   | "panel.selector"
+  | "panel.tableData"
   | "panel.tests"
   | "empty.tree"
   | "empty.properties"
@@ -79,6 +80,21 @@ export type MessageKey =
   | "selector.export.playwright"
   | "selector.export.selenium"
   | "selector.copy"
+  | "table.rows"
+  | "table.columns"
+  | "table.headerLevels"
+  | "table.dataPreview"
+  | "table.exportPreview"
+  | "table.format.csv"
+  | "table.format.json"
+  | "table.format.markdown"
+  | "table.copy"
+  | "table.save"
+  | "table.copied"
+  | "table.saved"
+  | "table.cancelled"
+  | "table.copyFailed"
+  | "table.saveFailed"
   | "selector.diagnostic.missing"
   | "selector.diagnostic.multiple"
   | "selector.diagnostic.targetMismatch"
@@ -124,6 +140,7 @@ export const messages: Record<"zh-CN" | "en-US", Record<MessageKey, string>> = {
     "panel.explorer": "结构",
     "panel.properties": "属性",
     "panel.selector": "Selector",
+    "panel.tableData": "表格数据",
     "panel.tests": "测试页面",
     "empty.tree": "Phase 1 会在这里显示 DOM、iframe 和 Shadow 层级。",
     "empty.properties": "选择元素后，这里会显示属性、可访问性和布局信息。",
@@ -189,6 +206,21 @@ export const messages: Record<"zh-CN" | "en-US", Record<MessageKey, string>> = {
     "selector.export.playwright": "Playwright",
     "selector.export.selenium": "Selenium",
     "selector.copy": "复制导出内容",
+    "table.rows": "数据行",
+    "table.columns": "列",
+    "table.headerLevels": "表头层级",
+    "table.dataPreview": "数据预览",
+    "table.exportPreview": "格式预览",
+    "table.format.csv": "CSV",
+    "table.format.json": "JSON",
+    "table.format.markdown": "Markdown",
+    "table.copy": "复制",
+    "table.save": "保存文件",
+    "table.copied": "已复制",
+    "table.saved": "已保存",
+    "table.cancelled": "已取消",
+    "table.copyFailed": "复制失败",
+    "table.saveFailed": "保存失败",
     "selector.diagnostic.missing": "未匹配任何元素",
     "selector.diagnostic.multiple": "匹配到多个元素",
     "selector.diagnostic.targetMismatch": "唯一匹配结果不是捕获目标",
@@ -233,6 +265,7 @@ export const messages: Record<"zh-CN" | "en-US", Record<MessageKey, string>> = {
     "panel.explorer": "Structure",
     "panel.properties": "Properties",
     "panel.selector": "Selector",
+    "panel.tableData": "Table data",
     "panel.tests": "Test pages",
     "empty.tree": "Phase 1 will render DOM, iframe, and Shadow hierarchy here.",
     "empty.properties": "Selected element attributes, accessibility, and layout will appear here.",
@@ -298,6 +331,21 @@ export const messages: Record<"zh-CN" | "en-US", Record<MessageKey, string>> = {
     "selector.export.playwright": "Playwright",
     "selector.export.selenium": "Selenium",
     "selector.copy": "Copy export",
+    "table.rows": "Data rows",
+    "table.columns": "Columns",
+    "table.headerLevels": "Header levels",
+    "table.dataPreview": "Data preview",
+    "table.exportPreview": "Format preview",
+    "table.format.csv": "CSV",
+    "table.format.json": "JSON",
+    "table.format.markdown": "Markdown",
+    "table.copy": "Copy",
+    "table.save": "Save file",
+    "table.copied": "Copied",
+    "table.saved": "Saved",
+    "table.cancelled": "Cancelled",
+    "table.copyFailed": "Copy failed",
+    "table.saveFailed": "Save failed",
     "selector.diagnostic.missing": "No elements matched",
     "selector.diagnostic.multiple": "Multiple elements matched",
     "selector.diagnostic.targetMismatch": "Unique match is not the captured target",

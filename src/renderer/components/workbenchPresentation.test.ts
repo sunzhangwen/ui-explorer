@@ -2,12 +2,14 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import type { ContextBoundary, ElementNodeKind, ElementSnapshot, SnapshotDiagnostic } from "../../shared/ipc.js";
 import type { SelectorCandidate, SelectorLayer } from "../../shared/selector.js";
+import type { ExtractedTable } from "../../shared/tableExtraction.js";
 import {
   buildWorkbenchExports,
   findTreeSearchMatches,
   getContextPathLabels,
   getDiagnosticPresentation,
   getSelectorLayerMessageKey,
+  getTableSummary,
   getTreeNodeBadgeMessageKey,
   getTreeNodePresentationKind,
   getVisibilityMessageKey,
@@ -213,4 +215,24 @@ test("diagnostic export takes priority over a selector draft from the previously
   const exports = buildWorkbenchExports(diagnostic, staleCandidate);
   assert.match(exports?.selenium ?? "", /\[closed-shadow-root\]/);
   assert.doesNotMatch(exports?.selenium ?? "", /\.click\(\)/);
+});
+
+test("summarizes extracted table dimensions and header depth", () => {
+  const table: ExtractedTable = {
+    tableId: "metrics",
+    caption: "Metrics",
+    headerDepth: 2,
+    headers: ["Team", "Q1", "Q2"],
+    rows: [["Payments", "1", "2"], ["Identity", "3", "4"]],
+    records: [
+      { Team: "Payments", Q1: "1", Q2: "2" },
+      { Team: "Identity", Q1: "3", Q2: "4" }
+    ]
+  };
+
+  assert.deepEqual(getTableSummary(table), { columns: 3, rows: 2, headerDepth: 2 });
+});
+
+test("returns no table summary without a selected table", () => {
+  assert.equal(getTableSummary(null), null);
 });

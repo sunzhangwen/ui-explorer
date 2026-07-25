@@ -26,7 +26,7 @@ type PanelSizes = {
   right: number;
 };
 
-export type RightPanelSectionId = "diagnostics" | "snapshot" | "element" | "selector" | "export";
+export type RightPanelSectionId = "diagnostics" | "snapshot" | "element" | "selector" | "table" | "export";
 
 type RightPanelSections = Record<RightPanelSectionId, boolean>;
 
@@ -81,6 +81,7 @@ const defaultRightPanelSections: RightPanelSections = {
   snapshot: true,
   element: true,
   selector: true,
+  table: true,
   export: false
 };
 
