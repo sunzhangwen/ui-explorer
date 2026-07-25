@@ -146,6 +146,55 @@ src/
 
 其中 `iframe.html` 覆盖同源嵌套 frame，`shadow-dom.html` 覆盖 open、嵌套 open 与 closed Shadow Root。对于同源 frame 与 open Shadow DOM，元素树、属性路径、Selector 层级、导出代码和限制诊断共用同一套上下文信息。
 
+### 在浏览器中直接加载
+
+只查看测试页面时，启动 Vite：
+
+```bash
+npm exec vite -- --host 127.0.0.1
+```
+
+然后访问以下地址：
+
+| 场景 | 地址 |
+|------|------|
+| 普通 DOM | `http://127.0.0.1:5173/test-pages/basic-dom.html` |
+| 同源嵌套 iframe | `http://127.0.0.1:5173/test-pages/iframe.html` |
+| Shadow DOM | `http://127.0.0.1:5173/test-pages/shadow-dom.html` |
+| 动态列表 | `http://127.0.0.1:5173/test-pages/dynamic-list.html` |
+| HTML 表格 | `http://127.0.0.1:5173/test-pages/table.html` |
+| 弹层与瞬态元素 | `http://127.0.0.1:5173/test-pages/popup.html` |
+
+如果 `5173` 端口已被占用，Vite 会在终端输出实际端口；请将上述地址中的端口替换为终端显示的端口。
+
+### 在 UI Explorer 中检查
+
+先启动完整开发环境：
+
+```bash
+npm run dev
+```
+
+保持该命令运行，再打开另一个 PowerShell 窗口，以独立用户数据目录启动 Chrome，并直接加载需要检查的测试页面：
+
+```powershell
+& "C:\Program Files\Google\Chrome\Application\chrome.exe" `
+  --remote-debugging-port=9222 `
+  --user-data-dir="D:\Temp\ui-explorer-chrome" `
+  "http://127.0.0.1:5173/test-pages/table.html"
+```
+
+也可以使用 Edge：
+
+```powershell
+msedge `
+  --remote-debugging-port=9222 `
+  --user-data-dir="D:\Temp\ui-explorer-edge" `
+  "http://127.0.0.1:5173/test-pages/table.html"
+```
+
+在 UI Explorer 中保持调试地址为 `localhost:9222`，点击“连接”，然后从左侧目标列表选择刚打开的测试页面。切换场景时，可以修改浏览器地址栏中的 `/test-pages/*.html` 路径，也可以重新执行启动命令并替换最后的 URL。
+
 ## 上下文范围与限制
 
 Phase 3 支持遍历同源嵌套 iframe，以及进入 open Shadow DOM。跨域 iframe 与浏览器以 OOPIF（Out-of-Process iframe）形式承载的 frame 内容不在本阶段的遍历范围内：应用会显示不可访问的上下文诊断，而不会报告其内部的可选元素。该能力明确推迟到 Phase 8。对于带有测试标记、可确认 closed mode 的宿主，应用只显示限制诊断，无法捕获或定位其内部节点；普通页面若无法可靠识别 closed Shadow Root，则不会猜测或误报。
