@@ -122,6 +122,20 @@ export function getTableSummary(
     : null;
 }
 
+export function getVirtualTableWindow(
+  rowCount: number,
+  scrollTop: number,
+  rowHeight: number,
+  visibleCount: number,
+  overscan: number
+): { startIndex: number; endIndex: number } {
+  const startIndex = Math.max(0, Math.floor(scrollTop / rowHeight) - overscan);
+  return {
+    startIndex,
+    endIndex: Math.min(rowCount, startIndex + visibleCount + overscan * 2)
+  };
+}
+
 function getTreeNodeSearchText(node: ElementSnapshot): string {
   return [
     node.nodeName,

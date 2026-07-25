@@ -203,38 +203,26 @@ function buildHeaders(grid: GridCell[][], headerIndexes: number[], width: number
 
 function getCaption(table: ElementSnapshot): string | null {
   const caption = table.children.find((child) => child.tagName === "caption");
-  const text = caption ? normalizeWhitespace(readVisibleText(caption)) : "";
+  const text = caption ? normalizeWhitespace(readDescendantText(caption, false)) : "";
   return text || normalizeWhitespace(table.attributes["aria-label"] ?? "") || null;
 }
 
 function getCellText(cell: ElementSnapshot): string {
-  let text = readVisibleText(cell);
-  for (const nestedTable of findNestedTables(cell)) {
-    const nestedText = readVisibleText(nestedTable);
-    if (nestedText) {
-      text = text.replace(nestedText, " ");
-    }
-  }
-  return normalizeWhitespace(text);
+  return normalizeWhitespace(readDescendantText(cell, true));
 }
 
-function findNestedTables(node: ElementSnapshot): ElementSnapshot[] {
-  const tables: ElementSnapshot[] = [];
+function readDescendantText(node: ElementSnapshot, skipNestedTables: boolean): string {
+  const parts = node.text ? [node.text] : [];
   for (const child of node.children) {
-    if (child.tagName === "table") {
-      tables.push(child);
-    } else {
-      tables.push(...findNestedTables(child));
+    if (skipNestedTables && child.tagName === "table") {
+      continue;
+    }
+    const childText = readDescendantText(child, skipNestedTables);
+    if (childText) {
+      parts.push(childText);
     }
   }
-  return tables;
-}
-
-function readVisibleText(node: ElementSnapshot): string {
-  if (node.text) {
-    return node.text;
-  }
-  return node.children.map(readVisibleText).filter(Boolean).join(" ");
+  return parts.join(" ");
 }
 
 function normalizeWhitespace(value: string): string {

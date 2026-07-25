@@ -10,6 +10,7 @@ import {
   getDiagnosticPresentation,
   getSelectorLayerMessageKey,
   getTableSummary,
+  getVirtualTableWindow,
   getTreeNodeBadgeMessageKey,
   getTreeNodePresentationKind,
   getVisibilityMessageKey,
@@ -235,4 +236,15 @@ test("summarizes extracted table dimensions and header depth", () => {
 
 test("returns no table summary without a selected table", () => {
   assert.equal(getTableSummary(null), null);
+});
+
+test("computes an overscanned virtual table row window", () => {
+  assert.deepEqual(getVirtualTableWindow(100, 300, 30, 8, 3), {
+    startIndex: 7,
+    endIndex: 21
+  });
+  assert.deepEqual(getVirtualTableWindow(4, 0, 30, 8, 3), {
+    startIndex: 0,
+    endIndex: 4
+  });
 });

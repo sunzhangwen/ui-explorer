@@ -11,6 +11,7 @@ import {
   Contrast,
   Copy,
   Database,
+  Download,
   FileJson,
   Gauge,
   Globe2,
@@ -26,12 +27,13 @@ import {
   ShieldAlert,
   SlidersHorizontal,
   Sun,
+  Table2,
   Waypoints
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { PointerEvent, ReactNode } from "react";
 import { findElementSnapshot, flattenElementSnapshot, formatElementAttributes } from "../../shared/domSnapshot";
-import type { ElementSnapshot, SnapshotDiagnostic } from "../../shared/ipc";
+import type { ElementSnapshot, SnapshotDiagnostic, TableExportSaveResult } from "../../shared/ipc";
 import {
   applySelectorEdit,
   generateSelectorCandidates,
@@ -40,6 +42,8 @@ import {
   type SelectorExports,
   type SelectorLayer
 } from "../../shared/selector";
+import { buildAllTableExports, TABLE_EXPORT_FORMATS, type TableExportFormat } from "../../shared/tableExport";
+import { extractTableForSelection, type ExtractedTable } from "../../shared/tableExtraction";
 import { useI18n } from "../i18n/I18nProvider";
 import type { MessageKey } from "../i18n/messages";
 import { useAppStore } from "../store/useAppStore";
@@ -49,8 +53,10 @@ import {
   getContextPathLabels,
   getDiagnosticPresentation,
   getSelectorLayerMessageKey,
+  getTableSummary,
   getTreeNodeBadgeMessageKey,
   getTreeNodePresentationKind,
+  getVirtualTableWindow,
   getVisibilityMessageKey,
   isTreeNodeSelectable
 } from "./workbenchPresentation";
@@ -93,6 +99,7 @@ export function WorkbenchLayout(): JSX.Element {
     highlightElements,
     getPickedElementId,
     rightPanelSections,
+    saveTableExport,
     selectedBrowserTargetId,
     selectedElementId,
     selectedTestPageId,
@@ -170,6 +177,11 @@ export function WorkbenchLayout(): JSX.Element {
     () => buildWorkbenchExports(selectedElement, selectedCandidate),
     [selectedCandidate, selectedElement]
   );
+  const extractedTable = useMemo(
+    () => extractTableForSelection(domSnapshot?.root ?? null, selectedElementId),
+    [domSnapshot?.root, selectedElementId]
+  );
+  const tableSummary = getTableSummary(extractedTable);
   const previewSnippet = selectorExports?.[exportFormat] ?? "";
 
   const revealElement = (elementId: string) => {
@@ -361,6 +373,9 @@ export function WorkbenchLayout(): JSX.Element {
       ? t(getDiagnosticPresentation(selectedElement.diagnostic).messageKey)
       : "-";
   const exportSummary = selectorExports ? t(`selector.export.${exportFormat}`) : "-";
+  const tablePanelSummary = tableSummary
+    ? `${tableSummary.rows} ${t("table.rows")} / ${tableSummary.columns} ${t("table.columns")}`
+    : "-";
   const selectedTargetSummary = selectedTarget?.title || selectedTarget?.url || "-";
   const selectedTestSummary = selectedPage ? t(selectedPage.titleKey) : "-";
 
@@ -639,6 +654,23 @@ export function WorkbenchLayout(): JSX.Element {
             />
           </CollapsibleSection>
 
+          {extractedTable ? (
+            <CollapsibleSection
+              icon={<Table2 size={15} />}
+              open={rightPanelSections.table}
+              summary={tablePanelSummary}
+              title={t("panel.tableData")}
+              onToggle={() => toggleRightPanelSection("table")}
+            >
+              <TableDataPanel
+                key={`${domSnapshot?.capturedAt ?? "snapshot"}-${extractedTable.tableId}`}
+                table={extractedTable}
+                theme={theme}
+                onSave={saveTableExport}
+              />
+            </CollapsibleSection>
+          ) : null}
+
           <CollapsibleSection
             icon={<Code2 size={15} />}
             open={rightPanelSections.export}
@@ -685,6 +717,211 @@ export function WorkbenchLayout(): JSX.Element {
           </CollapsibleSection>
         </aside>
       </main>
+    </div>
+  );
+}
+
+const TABLE_ROW_HEIGHT = 30;
+const TABLE_VISIBLE_ROWS = 8;
+const TABLE_OVERSCAN = 3;
+
+function TableDataPanel({
+  onSave,
+  table,
+  theme
+}: {
+  onSave: (request: {
+    format: TableExportFormat;
+    content: string;
+    suggestedBaseName: string;
+  }) => Promise<TableExportSaveResult>;
+  table: ExtractedTable;
+  theme: "light" | "dark";
+}): JSX.Element {
+  const { t } = useI18n();
+  const [format, setFormat] = useState<TableExportFormat>("csv");
+  const [scrollTop, setScrollTop] = useState(0);
+  const [feedback, setFeedback] = useState<{
+    kind: "copied" | "copy-error" | "saved" | "cancelled" | "save-error";
+    detail?: string;
+  } | null>(null);
+  const exports = useMemo(() => buildAllTableExports(table), [table]);
+  const summary = getTableSummary(table);
+  const virtualWindow = getVirtualTableWindow(
+    table.rows.length,
+    Math.max(0, scrollTop - TABLE_ROW_HEIGHT),
+    TABLE_ROW_HEIGHT,
+    TABLE_VISIBLE_ROWS,
+    TABLE_OVERSCAN
+  );
+  const visibleRows = table.rows.slice(virtualWindow.startIndex, virtualWindow.endIndex);
+  const gridWidth = Math.max(320, table.headers.length * 140);
+  const gridTemplateColumns = `repeat(${Math.max(1, table.headers.length)}, minmax(120px, 1fr))`;
+  const preview = exports[format];
+
+  useEffect(() => {
+    setFormat("csv");
+    setScrollTop(0);
+    setFeedback(null);
+  }, [table.tableId]);
+
+  useEffect(() => {
+    setFeedback(null);
+  }, [format]);
+
+  const copyTableExport = async () => {
+    try {
+      if (!navigator.clipboard) {
+        throw new Error("Clipboard API is unavailable.");
+      }
+      await navigator.clipboard.writeText(preview);
+      setFeedback({ kind: "copied" });
+    } catch (error) {
+      setFeedback({
+        kind: "copy-error",
+        detail: error instanceof Error ? error.message : String(error)
+      });
+    }
+  };
+
+  const saveTable = async () => {
+    let result: TableExportSaveResult;
+    try {
+      result = await onSave({
+        format,
+        content: preview,
+        suggestedBaseName: table.caption || `table-${table.tableId}`
+      });
+    } catch (error) {
+      setFeedback({
+        kind: "save-error",
+        detail: error instanceof Error ? error.message : String(error)
+      });
+      return;
+    }
+    switch (result.status) {
+      case "saved":
+        setFeedback({ kind: "saved", detail: result.filePath });
+        break;
+      case "cancelled":
+        setFeedback({ kind: "cancelled" });
+        break;
+      case "error":
+        setFeedback({ kind: "save-error", detail: result.message });
+        break;
+      default: {
+        const exhaustiveResult: never = result;
+        throw new Error(`Unhandled table save result: ${String(exhaustiveResult)}`);
+      }
+    }
+  };
+
+  if (!summary || table.headers.length === 0) {
+    return <p className="empty-copy">{t("table.empty")}</p>;
+  }
+
+  return (
+    <div className="table-data-panel">
+      <div className="table-metrics">
+        <Metric label={t("table.rows")} value={String(summary.rows)} />
+        <Metric label={t("table.columns")} value={String(summary.columns)} />
+        <Metric label={t("table.headerLevels")} value={String(summary.headerDepth)} />
+      </div>
+
+      <section className="table-preview-card">
+        <h3>{t("table.dataPreview")}</h3>
+        <div className="table-data-grid" onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}>
+          <div className="table-grid-content" style={{ width: gridWidth }}>
+            <div className="table-data-header" style={{ gridTemplateColumns }}>
+              {table.headers.map((header) => (
+                <strong key={header} title={header}>{header}</strong>
+              ))}
+            </div>
+            <div className="table-data-body" style={{ height: table.rows.length * TABLE_ROW_HEIGHT }}>
+              {visibleRows.map((row, visibleIndex) => {
+                const rowIndex = virtualWindow.startIndex + visibleIndex;
+                return (
+                  <div
+                    className="table-data-row"
+                    key={rowIndex}
+                    style={{
+                      gridTemplateColumns,
+                      transform: `translateY(${rowIndex * TABLE_ROW_HEIGHT}px)`
+                    }}
+                  >
+                    {table.headers.map((header, column) => (
+                      <span key={`${header}-${column}`} title={row[column] ?? ""}>{row[column] ?? ""}</span>
+                    ))}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="editor-shell table-export-shell">
+        <div className="editor-title">
+          <Code2 size={14} />
+          {t("table.exportPreview")}
+          <div className="editor-tabs" role="tablist" aria-label={t("table.exportPreview")}>
+            {TABLE_EXPORT_FORMATS.map((candidate) => (
+              <button
+                type="button"
+                key={candidate}
+                className={candidate === format ? "selected" : ""}
+                onClick={() => setFormat(candidate)}
+              >
+                {t(`table.format.${candidate}`)}
+              </button>
+            ))}
+          </div>
+        </div>
+        <Editor
+          height="170px"
+          language={format === "json" ? "json" : format === "markdown" ? "markdown" : "plaintext"}
+          value={preview}
+          options={{
+            readOnly: true,
+            minimap: { enabled: false },
+            scrollBeyondLastLine: false,
+            fontSize: 12,
+            lineNumbers: "off",
+            folding: false,
+            renderLineHighlight: "none"
+          }}
+          theme={theme === "dark" ? "vs-dark" : "light"}
+        />
+      </section>
+
+      <div className="table-export-actions">
+        <button type="button" onClick={() => void copyTableExport()}>
+          <Copy size={13} />
+          {t("table.copy")}
+        </button>
+        <button type="button" className="primary" onClick={() => void saveTable()}>
+          <Download size={13} />
+          {t("table.save")}
+        </button>
+      </div>
+      {feedback ? (
+        <p
+          className="table-export-feedback"
+          data-status={feedback.kind === "copy-error" || feedback.kind === "save-error" ? "error" : feedback.kind}
+          title={feedback.detail}
+        >
+          {feedback.kind === "copied"
+            ? t("table.copied")
+            : feedback.kind === "saved"
+              ? t("table.saved")
+              : feedback.kind === "cancelled"
+                ? t("table.cancelled")
+                : feedback.kind === "copy-error"
+                  ? t("table.copyFailed")
+                  : t("table.saveFailed")}
+          {feedback.detail ? ` · ${feedback.detail}` : ""}
+        </p>
+      ) : null}
     </div>
   );
 }

@@ -16,6 +16,8 @@ import {
   type ElementSnapshot,
   type IpcApi,
   type Locale,
+  type TableExportSaveRequest,
+  type TableExportSaveResult,
   type TestPage,
   type ThemeName
 } from "../../shared/ipc";
@@ -71,6 +73,7 @@ type AppStore = {
   highlightElements: (elementIds: string[]) => Promise<void>;
   setElementPickerEnabled: (enabled: boolean) => Promise<void>;
   getPickedElementId: () => Promise<string | null>;
+  saveTableExport: (request: TableExportSaveRequest) => Promise<TableExportSaveResult>;
   initialize: () => Promise<void>;
 };
 
@@ -276,6 +279,7 @@ export const useAppStore = create<AppStore>()(
         }
       },
       getPickedElementId: async () => getApi().getPickedElementId(),
+      saveTableExport: async (request) => getApi().saveTableExport(request),
       initialize: async () => {
         try {
           const api = getApi();

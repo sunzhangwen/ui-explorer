@@ -143,13 +143,27 @@ test("does not include nested table rows or text in the outer table", () => {
   const nested = element("nested", "table", [
     element("nested-row", "tr", [cell("nested-cell", "td", "Nested value")])
   ]);
-  const wrapper = element("wrapper", "span", [nested], { text: "Outer value Nested value" });
+  const wrapper = element("wrapper", "span", [nested], { text: "Outer value" });
   const table = element("outer", "table", [
     element("header", "tr", [cell("h1", "th", "Name")]),
-    element("data", "tr", [cell("outer-cell", "td", "Outer value Nested value", {}, [wrapper])])
+    element("data", "tr", [cell("outer-cell", "td", "", {}, [wrapper])])
   ]);
 
   assert.deepEqual(extractTableForSelection(table, "outer")?.rows, [["Outer value"]]);
+});
+
+test("collects text from non-table descendants in DOM order", () => {
+  const table = element("table", "table", [
+    element("header", "tr", [cell("heading", "th", "Metric")]),
+    element("data", "tr", [
+      cell("value", "td", "Q1", {}, [
+        element("number", "strong", [], { text: "148" }),
+        element("suffix", "span", [], { text: "selectors" })
+      ])
+    ])
+  ]);
+
+  assert.deepEqual(extractTableForSelection(table, "value")?.rows, [["Q1 148 selectors"]]);
 });
 
 test("returns null when the selected element is outside a table", () => {

@@ -980,6 +980,150 @@ select {
   place-items: center;
 }
 
+.table-data-panel {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.table-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+
+.table-preview-card {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.table-preview-card h3 {
+  margin: 0;
+  color: rgb(var(--color-muted));
+  font-size: var(--font-size-xs);
+  text-transform: uppercase;
+}
+
+.table-data-grid {
+  height: 270px;
+  overflow: auto;
+  border: 1px solid rgb(var(--color-border));
+  border-radius: var(--radius-ui);
+  background:
+    linear-gradient(90deg, rgb(var(--color-accent) / 0.035) 1px, transparent 1px) 0 0 / 28px 100%,
+    rgb(var(--color-panel) / 0.62);
+}
+
+.table-grid-content {
+  min-width: 100%;
+}
+
+.table-data-header,
+.table-data-row {
+  display: grid;
+  min-width: 100%;
+}
+
+.table-data-header {
+  position: sticky;
+  z-index: 2;
+  top: 0;
+  min-height: 30px;
+  border-bottom: 1px solid rgb(var(--color-accent) / 0.6);
+  background: rgb(var(--color-elevated) / 0.98);
+  box-shadow: 0 5px 14px rgb(0 0 0 / 0.18);
+}
+
+.table-data-header strong,
+.table-data-row span {
+  min-width: 0;
+  overflow: hidden;
+  padding: 7px 9px;
+  border-right: 1px solid rgb(var(--color-border));
+  font-size: var(--font-size-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.table-data-header strong {
+  color: rgb(var(--color-accent));
+  font-family: var(--font-mono);
+  font-weight: 700;
+}
+
+.table-data-body {
+  position: relative;
+}
+
+.table-data-row {
+  position: absolute;
+  inset: 0 0 auto;
+  height: 30px;
+  border-bottom: 1px solid rgb(var(--color-border) / 0.75);
+}
+
+.table-data-row:nth-child(even) {
+  background: rgb(var(--color-elevated) / 0.35);
+}
+
+.table-data-row:hover {
+  background: rgb(var(--color-accent) / 0.08);
+}
+
+.table-export-shell {
+  min-height: 204px;
+}
+
+.table-export-shell .editor-tabs {
+  overflow-x: auto;
+}
+
+.table-export-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+
+.table-export-actions button {
+  justify-content: center;
+  gap: 6px;
+  min-width: 0;
+  height: 30px;
+  border: 1px solid rgb(var(--color-border));
+  border-radius: var(--radius-ui);
+  background: rgb(var(--color-elevated) / 0.72);
+  color: rgb(var(--color-text));
+  font-size: var(--font-size-xs);
+}
+
+.table-export-actions button:hover,
+.table-export-actions button.primary {
+  border-color: rgb(var(--color-accent));
+}
+
+.table-export-actions button.primary {
+  background: rgb(var(--color-accent) / 0.15);
+  color: rgb(var(--color-accent));
+}
+
+.table-export-feedback {
+  margin: 0;
+  overflow: hidden;
+  color: rgb(var(--color-success));
+  font-size: var(--font-size-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.table-export-feedback[data-status="cancelled"] {
+  color: rgb(var(--color-muted));
+}
+
+.table-export-feedback[data-status="error"] {
+  color: rgb(var(--color-danger));
+}
+
 @media (max-width: 1180px) {
   .topbar {
     grid-template-columns: minmax(180px, 260px) minmax(220px, 1fr) auto;

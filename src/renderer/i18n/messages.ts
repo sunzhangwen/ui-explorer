@@ -83,6 +83,7 @@ export type MessageKey =
   | "table.rows"
   | "table.columns"
   | "table.headerLevels"
+  | "table.empty"
   | "table.dataPreview"
   | "table.exportPreview"
   | "table.format.csv"
@@ -209,6 +210,7 @@ export const messages: Record<"zh-CN" | "en-US", Record<MessageKey, string>> = {
     "table.rows": "数据行",
     "table.columns": "列",
     "table.headerLevels": "表头层级",
+    "table.empty": "该表格没有可提取的数据。",
     "table.dataPreview": "数据预览",
     "table.exportPreview": "格式预览",
     "table.format.csv": "CSV",
@@ -334,6 +336,7 @@ export const messages: Record<"zh-CN" | "en-US", Record<MessageKey, string>> = {
     "table.rows": "Data rows",
     "table.columns": "Columns",
     "table.headerLevels": "Header levels",
+    "table.empty": "This table has no extractable data.",
     "table.dataPreview": "Data preview",
     "table.exportPreview": "Format preview",
     "table.format.csv": "CSV",
