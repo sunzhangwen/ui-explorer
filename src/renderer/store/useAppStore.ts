@@ -1,6 +1,10 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import { findElementSnapshot } from "../../shared/domSnapshot";
+import {
+  findElementSnapshot,
+  restoreElementSelection,
+  type ElementSelectionRestoreResult
+} from "../../shared/domSnapshot";
 import {
   captureHighlightRequest,
   isHighlightRequestCurrent,
@@ -11,6 +15,7 @@ import {
   type AppInfo,
   type BrowserConnectionDiagnostics,
   type BrowserConnectionInfo,
+  type BrowserDebugEndpoint,
   type BrowserTarget,
   type DomSnapshotResult,
   type ElementSnapshot,
@@ -52,6 +57,8 @@ type AppStore = {
   ipcStatus: IpcStatus;
   appInfo: AppInfo | null;
   testPages: TestPage[];
+  browserDebugEndpoints: BrowserDebugEndpoint[];
+  isDiscoveringBrowserEndpoints: boolean;
   selectedTestPageId: string | null;
   browserConnection: BrowserConnectionStatus;
   browserTargets: BrowserTarget[];
@@ -59,13 +66,16 @@ type AppStore = {
   domSnapshot: DomSnapshotResult | null;
   domSnapshotGeneration: number;
   selectedElementId: string | null;
+  selectionRecovery: ElementSelectionRestoreResult | null;
   setLocale: (locale: Locale) => void;
   setTheme: (theme: ThemeName) => void;
   setDensity: (density: "comfortable" | "compact") => void;
   setPanelSize: (panel: keyof PanelSizes, width: number) => void;
   toggleRightPanelSection: (section: RightPanelSectionId) => void;
   selectTestPage: (id: string) => void;
+  discoverBrowserEndpoints: () => Promise<void>;
   connectBrowser: (endpoint: string) => Promise<void>;
+  monitorBrowserConnection: () => Promise<void>;
   disconnectBrowser: () => Promise<void>;
   refreshDomSnapshot: () => Promise<void>;
   selectBrowserTarget: (targetId: string) => Promise<void>;
@@ -73,6 +83,7 @@ type AppStore = {
   highlightElements: (elementIds: string[]) => Promise<void>;
   setElementPickerEnabled: (enabled: boolean) => Promise<void>;
   getPickedElementId: () => Promise<string | null>;
+  subscribeCaptureRequested: (listener: () => void) => () => void;
   saveTableExport: (request: TableExportSaveRequest) => Promise<TableExportSaveResult>;
   initialize: () => Promise<void>;
 };
@@ -88,6 +99,8 @@ const defaultRightPanelSections: RightPanelSections = {
   export: false
 };
 
+let connectionMonitorInFlight = false;
+
 export const useAppStore = create<AppStore>()(
   persist(
     (set, get) => ({
@@ -102,6 +115,8 @@ export const useAppStore = create<AppStore>()(
       ipcStatus: { state: "idle" },
       appInfo: null,
       testPages: [],
+      browserDebugEndpoints: [],
+      isDiscoveringBrowserEndpoints: false,
       selectedTestPageId: null,
       browserConnection: { state: "idle" },
       browserTargets: [],
@@ -109,6 +124,7 @@ export const useAppStore = create<AppStore>()(
       domSnapshot: null,
       domSnapshotGeneration: 0,
       selectedElementId: null,
+      selectionRecovery: null,
       setLocale: (locale) => set({ locale }),
       setTheme: (theme) => set({ theme }),
       setDensity: (density) => set({ density }),
@@ -128,6 +144,15 @@ export const useAppStore = create<AppStore>()(
           }
         })),
       selectTestPage: (id) => set({ selectedTestPageId: id }),
+      discoverBrowserEndpoints: async () => {
+        set({ isDiscoveringBrowserEndpoints: true });
+        try {
+          const browserDebugEndpoints = await getApi().discoverBrowserEndpoints();
+          set({ browserDebugEndpoints, isDiscoveringBrowserEndpoints: false });
+        } catch {
+          set({ browserDebugEndpoints: [], isDiscoveringBrowserEndpoints: false });
+        }
+      },
       connectBrowser: async (endpoint) => {
         const api = getApi();
         set({ browserConnection: { state: "connecting", endpoint } });
@@ -141,8 +166,104 @@ export const useAppStore = create<AppStore>()(
             browserConnection: { state: "error", endpoint, message },
             domSnapshot: null,
             domSnapshotGeneration: get().domSnapshotGeneration + 1,
-            selectedElementId: null
+            selectedElementId: null,
+            selectionRecovery: null
           });
+        }
+      },
+      monitorBrowserConnection: async () => {
+        const current = get();
+        if (current.browserConnection.state !== "connected" || connectionMonitorInFlight) {
+          return;
+        }
+        connectionMonitorInFlight = true;
+        const requestEndpoint = current.browserConnection.endpoint;
+        const requestTargetId = current.selectedBrowserTargetId;
+        const isCurrentRequest = () => {
+          const latest = get();
+          return (
+            latest.browserConnection.state === "connected" &&
+            latest.browserConnection.endpoint === requestEndpoint &&
+            latest.selectedBrowserTargetId === requestTargetId
+          );
+        };
+        try {
+          const info = await getApi().refreshBrowserConnection();
+          if (!isCurrentRequest()) {
+            return;
+          }
+          if (!info.targetId) {
+            set((state) => ({
+              browserConnection: {
+                state: "connected",
+                endpoint: info.endpoint,
+                message: info.status,
+                diagnostics: info.diagnostics
+              },
+              browserTargets: info.targets,
+              selectedBrowserTargetId: null,
+              domSnapshot: null,
+              domSnapshotGeneration: state.domSnapshotGeneration + 1,
+              selectedElementId: null,
+              selectionRecovery: null
+            }));
+            return;
+          }
+
+          const targetChanged =
+            info.targetId !== current.selectedBrowserTargetId ||
+            info.status === "reconnected" ||
+            info.status === "navigated";
+          if (!targetChanged) {
+            set({
+              browserConnection: {
+                state: "connected",
+                endpoint: info.endpoint,
+                message: info.status,
+                diagnostics: info.diagnostics
+              },
+              browserTargets: info.targets
+            });
+            return;
+          }
+
+          const snapshot = await getApi().getDomSnapshot();
+          if (!isCurrentRequest()) {
+            return;
+          }
+          set((state) => {
+            const recovery = state.selectedElementId
+              ? restoreElementSelection(state.domSnapshot?.root ?? null, snapshot.root, state.selectedElementId)
+              : null;
+            return {
+              browserConnection: {
+                state: "connected",
+                endpoint: info.endpoint,
+                message: info.status,
+                diagnostics: info.diagnostics
+              },
+              browserTargets: info.targets,
+              selectedBrowserTargetId: info.targetId,
+              domSnapshot: snapshot,
+              domSnapshotGeneration: state.domSnapshotGeneration + 1,
+              selectedElementId: recovery?.elementId ?? snapshot.root?.id ?? null,
+              selectionRecovery: recovery
+            };
+          });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          if (isCurrentRequest()) {
+            set({
+              browserConnection: {
+                state: "connected",
+                endpoint: requestEndpoint,
+                message: "reconnecting"
+              }
+            });
+            console.warn("[ui-explorer] connection monitor retrying", message);
+          }
+        } finally {
+          connectionMonitorInFlight = false;
         }
       },
       disconnectBrowser: async () => {
@@ -154,18 +275,25 @@ export const useAppStore = create<AppStore>()(
           selectedBrowserTargetId: null,
           domSnapshot: null,
           domSnapshotGeneration: state.domSnapshotGeneration + 1,
-          selectedElementId: null
+          selectedElementId: null,
+          selectionRecovery: null
         }));
       },
       refreshDomSnapshot: async () => {
         const api = getApi();
         try {
           const snapshot = await api.getDomSnapshot();
-          set((state) => ({
-            domSnapshot: snapshot,
-            domSnapshotGeneration: state.domSnapshotGeneration + 1,
-            selectedElementId: snapshot.root?.id ?? null
-          }));
+          set((state) => {
+            const recovery = state.selectedElementId
+              ? restoreElementSelection(state.domSnapshot?.root ?? null, snapshot.root, state.selectedElementId)
+              : null;
+            return {
+              domSnapshot: snapshot,
+              domSnapshotGeneration: state.domSnapshotGeneration + 1,
+              selectedElementId: recovery?.elementId ?? snapshot.root?.id ?? null,
+              selectionRecovery: recovery
+            };
+          });
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
           const currentConnection = get().browserConnection;
@@ -180,7 +308,8 @@ export const useAppStore = create<AppStore>()(
           selectedBrowserTargetId: targetId,
           domSnapshot: snapshot,
           domSnapshotGeneration: state.domSnapshotGeneration + 1,
-          selectedElementId: snapshot.root?.id ?? null
+          selectedElementId: snapshot.root?.id ?? null,
+          selectionRecovery: null
         }));
       },
       selectElement: async (elementId) => {
@@ -279,6 +408,7 @@ export const useAppStore = create<AppStore>()(
         }
       },
       getPickedElementId: async () => getApi().getPickedElementId(),
+      subscribeCaptureRequested: (listener) => getApi().onCaptureRequested(listener),
       saveTableExport: async (request) => getApi().saveTableExport(request),
       initialize: async () => {
         try {
@@ -295,6 +425,7 @@ export const useAppStore = create<AppStore>()(
             testPages,
             selectedTestPageId: get().selectedTestPageId ?? testPages[0]?.id ?? null
           });
+          await get().discoverBrowserEndpoints();
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
           set({ ipcStatus: { state: "error", message } });
@@ -342,9 +473,17 @@ function getApi(): IpcApi {
       electron: "not-loaded"
     }),
     listTestPages: async () => TEST_PAGES,
+    discoverBrowserEndpoints: async () => [],
     connectBrowser: async () => {
       throw new Error("Electron IPC is not available. Please run UI Explorer with npm.cmd run dev.");
     },
+    refreshBrowserConnection: async () => ({
+      endpoint: "",
+      connected: false,
+      status: "target-closed",
+      targetId: null,
+      targets: []
+    }),
     disconnectBrowser: async () => undefined,
     listBrowserTargets: async () => [],
     selectBrowserTarget: async () => emptySnapshot(),
@@ -353,6 +492,7 @@ function getApi(): IpcApi {
     highlightElements: async () => ({ targets: [] }),
     setElementPickerEnabled: async () => undefined,
     getPickedElementId: async () => null,
+    onCaptureRequested: () => () => undefined,
     saveTableExport: async () => ({
       status: "error",
       message: "Electron IPC is not available."
@@ -383,14 +523,15 @@ function setConnectionInfo(
     browserConnection: {
       state: "connected",
       endpoint: info.endpoint,
-      message: info.targets.length > 0 ? "connected" : "no-targets",
+      message: info.status,
       diagnostics: info.diagnostics
     },
     browserTargets: info.targets,
     selectedBrowserTargetId: info.targetId,
     domSnapshot: snapshot,
     domSnapshotGeneration: state.domSnapshotGeneration + 1,
-    selectedElementId: snapshot.root?.id ?? null
+    selectedElementId: snapshot.root?.id ?? null,
+    selectionRecovery: null
   }));
 }
 

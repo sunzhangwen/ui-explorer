@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { getDefaultBrowserTargetId, toBrowserTargets } from "./browserTargets.js";
+import { getDefaultBrowserTargetId, recoverBrowserTarget, toBrowserTargets } from "./browserTargets.js";
 
 test("toBrowserTargets keeps inspectable page and iframe targets", () => {
   const targets = toBrowserTargets([
@@ -37,4 +37,40 @@ test("getDefaultBrowserTargetId prefers page targets", () => {
     ]),
     "page-1"
   );
+});
+
+test("BrowserTargetRecovery keeps a selected target that still exists", () => {
+  const previous = { id: "page-1", type: "page", title: "App", url: "https://app.test" };
+  const targets = [
+    { id: "page-1", type: "page", title: "App refreshed", url: "https://app.test/dashboard" }
+  ];
+
+  assert.deepEqual(recoverBrowserTarget(previous, targets), {
+    targetId: "page-1",
+    status: "stable"
+  });
+});
+
+test("BrowserTargetRecovery reconnects a replacement target with the same URL", () => {
+  const previous = { id: "page-old", type: "page", title: "App", url: "https://app.test/dashboard" };
+  const targets = [
+    { id: "page-new", type: "page", title: "App", url: "https://app.test/dashboard" }
+  ];
+
+  assert.deepEqual(recoverBrowserTarget(previous, targets), {
+    targetId: "page-new",
+    status: "recovered"
+  });
+});
+
+test("BrowserTargetRecovery reports a closed target without switching to another page", () => {
+  const previous = { id: "page-old", type: "page", title: "App", url: "https://app.test/dashboard" };
+  const targets = [
+    { id: "other", type: "page", title: "Other", url: "https://other.test" }
+  ];
+
+  assert.deepEqual(recoverBrowserTarget(previous, targets), {
+    targetId: null,
+    status: "closed"
+  });
 });

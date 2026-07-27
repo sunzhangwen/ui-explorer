@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
+import { app, BrowserWindow, dialog, globalShortcut, ipcMain, shell } from "electron";
 import { writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
@@ -19,6 +19,7 @@ import {
   sanitizeTableExportBaseName
 } from "../shared/tableFile.js";
 import { BrowserSession } from "./browserSession.js";
+import { discoverBrowserEndpoints } from "./browserDiscovery.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -67,7 +68,9 @@ function registerIpcHandlers(): void {
   });
 
   ipcMain.handle(IPC_CHANNELS.listTestPages, () => TEST_PAGES);
+  ipcMain.handle(IPC_CHANNELS.discoverBrowserEndpoints, () => discoverBrowserEndpoints());
   ipcMain.handle(IPC_CHANNELS.connectBrowser, (_event, endpoint: string) => browserSession.connect(endpoint));
+  ipcMain.handle(IPC_CHANNELS.refreshBrowserConnection, () => browserSession.refreshConnection());
   ipcMain.handle(IPC_CHANNELS.disconnectBrowser, () => {
     browserSession.disconnect();
   });
@@ -121,15 +124,31 @@ function registerIpcHandlers(): void {
   );
 }
 
+function registerCaptureShortcut(): void {
+  const registered = globalShortcut.register("CommandOrControl+Shift+E", () => {
+    for (const window of BrowserWindow.getAllWindows()) {
+      window.webContents.send(IPC_CHANNELS.captureRequested);
+    }
+  });
+  if (!registered) {
+    console.warn("[ui-explorer] unable to register capture shortcut");
+  }
+}
+
 app.whenReady().then(() => {
   registerIpcHandlers();
   createWindow();
+  registerCaptureShortcut();
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       createWindow();
     }
   });
+});
+
+app.on("will-quit", () => {
+  globalShortcut.unregisterAll();
 });
 
 app.on("window-all-closed", () => {

@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import net from "node:net";
 import tls from "node:tls";
-import { getDefaultBrowserTargetId, toBrowserTargets } from "../shared/browserTargets.js";
+import { getDefaultBrowserTargetId, recoverBrowserTarget, toBrowserTargets } from "../shared/browserTargets.js";
 import { normalizeDebugEndpoint } from "../shared/domSnapshot.js";
 import type {
   BrowserConnectionDiagnostics,
@@ -45,23 +45,43 @@ class CdpTargetClient {
   private sequence = 0;
   private pending = new Map<number, PendingRequest>();
   private frameBuffer: Buffer<ArrayBufferLike> = Buffer.alloc(0);
+  private lifecycleRevision = 0;
 
   async connect(webSocketDebuggerUrl: string): Promise<void> {
     this.disconnect();
     this.frameBuffer = Buffer.alloc(0);
-    this.socket = await connectWebSocket(webSocketDebuggerUrl);
-    this.socket.on("data", (chunk) => this.handleData(chunk));
-    this.socket.on("error", (error) => this.rejectPending(error instanceof Error ? error : new Error(String(error))));
-    this.socket.on("close", () => this.rejectPending(new Error("CDP websocket closed.")));
+    const socket = await connectWebSocket(webSocketDebuggerUrl);
+    this.socket = socket;
+    socket.on("data", (chunk) => this.handleData(chunk));
+    socket.on("error", (error) => {
+      if (this.socket === socket) {
+        this.rejectPending(error instanceof Error ? error : new Error(String(error)));
+      }
+    });
+    socket.on("close", () => {
+      if (this.socket === socket) {
+        this.socket = null;
+        this.rejectPending(new Error("CDP websocket closed."));
+      }
+    });
   }
 
   disconnect(): void {
-    if (this.socket && !this.socket.destroyed) {
-      this.socket.write(encodeClientCloseFrame());
-      this.socket.destroy();
-    }
+    const socket = this.socket;
     this.socket = null;
+    if (socket && !socket.destroyed) {
+      socket.write(encodeClientCloseFrame());
+      socket.destroy();
+    }
     this.rejectPending(new Error("CDP target disconnected."));
+  }
+
+  isConnected(): boolean {
+    return Boolean(this.socket && !this.socket.destroyed);
+  }
+
+  getLifecycleRevision(): number {
+    return this.lifecycleRevision;
   }
 
   async send<T>(method: string, params?: Record<string, unknown>): Promise<T> {
@@ -87,7 +107,10 @@ class CdpTargetClient {
     this.frameBuffer = extracted.remaining;
 
     for (const raw of extracted.messages) {
-      const message = JSON.parse(raw) as Partial<CdpResponse<unknown>>;
+      const message = JSON.parse(raw) as Partial<CdpResponse<unknown>> & { method?: string };
+      if (message.method && isBrowserLifecycleEvent(message.method)) {
+        this.lifecycleRevision += 1;
+      }
       if (typeof message.id !== "number") {
         continue;
       }
@@ -188,6 +211,8 @@ export class BrowserSession {
   private targets: BrowserTarget[] = [];
   private diagnostics: BrowserConnectionDiagnostics | null = null;
   private selectedTargetId: string | null = null;
+  private selectedTarget: BrowserTarget | null = null;
+  private observedLifecycleRevision = 0;
   private targetClient = new CdpTargetClient();
 
   async connect(rawEndpoint: string): Promise<BrowserConnectionInfo> {
@@ -199,7 +224,7 @@ export class BrowserSession {
       await this.connectTarget(this.selectedTargetId);
     }
 
-    return this.getConnectionInfo();
+    return this.getConnectionInfo(this.selectedTargetId ? "connected" : "no-targets");
   }
 
   disconnect(): void {
@@ -208,6 +233,7 @@ export class BrowserSession {
     this.targets = [];
     this.diagnostics = null;
     this.selectedTargetId = null;
+    this.selectedTarget = null;
   }
 
   async listTargets(): Promise<BrowserTarget[]> {
@@ -217,6 +243,43 @@ export class BrowserSession {
 
     this.targets = await this.fetchTargets();
     return this.targets;
+  }
+
+  async refreshConnection(): Promise<BrowserConnectionInfo> {
+    if (!this.endpoint) {
+      return this.getConnectionInfo("target-closed");
+    }
+
+    this.targets = await this.fetchTargets();
+    if (!this.selectedTarget) {
+      const targetId = getDefaultBrowserTargetId(this.targets);
+      if (!targetId) {
+        return this.getConnectionInfo("no-targets");
+      }
+      await this.connectTarget(targetId);
+      return this.getConnectionInfo("reconnected");
+    }
+
+    const recovery = recoverBrowserTarget(this.selectedTarget, this.targets);
+    if (!recovery.targetId) {
+      this.targetClient.disconnect();
+      this.selectedTargetId = null;
+      return this.getConnectionInfo("target-closed");
+    }
+
+    const currentTarget = this.targets.find((target) => target.id === recovery.targetId);
+    const targetNavigated = Boolean(currentTarget && currentTarget.url !== this.selectedTarget.url);
+    const lifecycleChanged = this.targetClient.getLifecycleRevision() !== this.observedLifecycleRevision;
+    const needsReconnect = recovery.status === "recovered" || !this.targetClient.isConnected();
+    if (needsReconnect) {
+      await this.connectTarget(recovery.targetId);
+      return this.getConnectionInfo("reconnected");
+    }
+
+    this.selectedTargetId = recovery.targetId;
+    this.selectedTarget = currentTarget ?? this.selectedTarget;
+    this.observedLifecycleRevision = this.targetClient.getLifecycleRevision();
+    return this.getConnectionInfo(targetNavigated || lifecycleChanged ? "navigated" : "connected");
   }
 
   async selectTarget(targetId: string): Promise<DomSnapshotResult> {
@@ -282,7 +345,14 @@ export class BrowserSession {
 
     await this.targetClient.connect(target.webSocketDebuggerUrl);
     await this.targetClient.send("Runtime.enable");
+    try {
+      await this.targetClient.send("Page.enable");
+    } catch {
+      // Some inspectable subtargets do not expose the Page domain.
+    }
     this.selectedTargetId = target.id;
+    this.selectedTarget = target;
+    this.observedLifecycleRevision = this.targetClient.getLifecycleRevision();
   }
 
   private async evaluate<T>(expression: string): Promise<T> {
@@ -303,15 +373,24 @@ export class BrowserSession {
     return response.result.value;
   }
 
-  private getConnectionInfo(): BrowserConnectionInfo {
+  private getConnectionInfo(status: BrowserConnectionInfo["status"]): BrowserConnectionInfo {
     return {
       endpoint: this.endpoint ?? "",
-      connected: Boolean(this.endpoint),
+      connected: Boolean(this.endpoint && status !== "no-targets" && status !== "target-closed"),
+      status,
       targetId: this.selectedTargetId,
       targets: this.targets,
       diagnostics: this.diagnostics ?? undefined
     };
   }
+}
+
+export function isBrowserLifecycleEvent(method: string): boolean {
+  return (
+    method === "Page.frameNavigated" ||
+    method === "Runtime.executionContextsCleared" ||
+    method === "Inspector.detached"
+  );
 }
 
 function getRawTargetArray(rawTargets: unknown): unknown[] {

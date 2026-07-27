@@ -143,6 +143,17 @@ test("snapshot script records frame and shadow context boundaries", () => {
   assert.match(SNAPSHOT_SCRIPT, /__uiExplorerSnapshotToken/);
 });
 
+test("snapshot script records accessibility and interaction diagnostics", () => {
+  assert.match(SNAPSHOT_SCRIPT, /accessibleName:/);
+  assert.match(SNAPSHOT_SCRIPT, /description:/);
+  assert.match(SNAPSHOT_SCRIPT, /\sdisabled,/);
+  assert.match(SNAPSHOT_SCRIPT, /clickable:/);
+  assert.match(SNAPSHOT_SCRIPT, /occluded:/);
+  assert.match(SNAPSHOT_SCRIPT, /visibilityReasons:/);
+  assert.match(SNAPSHOT_SCRIPT, /elementFromPoint/);
+  assert.match(SNAPSHOT_SCRIPT, /aria-describedby/);
+});
+
 test("highlight and picker scripts visit accessible frame documents", () => {
   assert.match(HIGHLIGHT_SCRIPT, /ownerDocument/);
   assert.match(HIGHLIGHT_SCRIPT, /documents/);

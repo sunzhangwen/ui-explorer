@@ -7,7 +7,8 @@ import {
   getContextPath,
   getElementPath,
   getElementSnapshotStats,
-  normalizeDebugEndpoint
+  normalizeDebugEndpoint,
+  restoreElementSelection
 } from "./domSnapshot.js";
 import type { ElementSnapshot } from "./ipc.js";
 
@@ -254,4 +255,76 @@ test("snapshot stats count frame, shadow, and inaccessible boundaries", () => {
 test("normalizeDebugEndpoint accepts host:port and full URLs", () => {
   assert.equal(normalizeDebugEndpoint("localhost:9222"), "http://localhost:9222");
   assert.equal(normalizeDebugEndpoint("http://127.0.0.1:9222/"), "http://127.0.0.1:9222");
+});
+
+test("restoreElementSelection follows a stable attribute when node ids shift", () => {
+  const nextSnapshot = structuredClone(snapshot);
+  const body = nextSnapshot.children[0];
+  body.children.unshift({
+    id: "new-node",
+    parentId: "body",
+    depth: 2,
+    nodeType: 1,
+    nodeName: "DIV",
+    tagName: "div",
+    attributes: {},
+    childIds: [],
+    children: []
+  });
+  body.children[1].id = "shifted-button";
+
+  assert.deepEqual(restoreElementSelection(snapshot, nextSnapshot, "button"), {
+    elementId: "shifted-button",
+    status: "restored",
+    strategy: "stable-attribute"
+  });
+});
+
+test("restoreElementSelection reports an ambiguous semantic match", () => {
+  const previous = structuredClone(snapshot);
+  const previousButton = previous.children[0].children[0];
+  previousButton.attributes = {};
+  const nextSnapshot = structuredClone(previous);
+  const nextBody = nextSnapshot.children[0];
+  nextBody.children = [
+    { ...structuredClone(previousButton), id: "save-a" },
+    { ...structuredClone(previousButton), id: "save-b" }
+  ];
+
+  assert.deepEqual(restoreElementSelection(previous, nextSnapshot, "button"), {
+    elementId: null,
+    status: "ambiguous"
+  });
+});
+
+test("restoreElementSelection prefers a unique test id over a shared title", () => {
+  const previous = structuredClone(snapshot);
+  const previousButton = previous.children[0].children[0];
+  previousButton.attributes.title = "Save";
+  const nextSnapshot = structuredClone(previous);
+  const nextBody = nextSnapshot.children[0];
+  nextBody.children = [
+    { ...structuredClone(previousButton), id: "exact-button" },
+    {
+      ...structuredClone(previousButton),
+      id: "same-title",
+      attributes: { title: "Save" }
+    }
+  ];
+
+  assert.deepEqual(restoreElementSelection(previous, nextSnapshot, "button"), {
+    elementId: "exact-button",
+    status: "restored",
+    strategy: "stable-attribute"
+  });
+});
+
+test("restoreElementSelection reports a removed target", () => {
+  const nextSnapshot = structuredClone(snapshot);
+  nextSnapshot.children[0].children = nextSnapshot.children[0].children.filter((node) => node.id !== "button");
+
+  assert.deepEqual(restoreElementSelection(snapshot, nextSnapshot, "button"), {
+    elementId: null,
+    status: "not-found"
+  });
 });

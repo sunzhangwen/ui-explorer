@@ -197,10 +197,10 @@ msedge `
 
 ## 上下文范围与限制
 
-Phase 3 支持遍历同源嵌套 iframe，以及进入 open Shadow DOM。跨域 iframe 与浏览器以 OOPIF（Out-of-Process iframe）形式承载的 frame 内容不在本阶段的遍历范围内：应用会显示不可访问的上下文诊断，而不会报告其内部的可选元素。该能力明确推迟到 Phase 8。对于带有测试标记、可确认 closed mode 的宿主，应用只显示限制诊断，无法捕获或定位其内部节点；普通页面若无法可靠识别 closed Shadow Root，则不会猜测或误报。
+当前支持遍历同源嵌套 iframe，以及进入 open Shadow DOM。跨域 iframe 与浏览器以 OOPIF（Out-of-Process iframe）形式承载的 frame 内容暂不支持遍历：应用会显示不可访问的上下文诊断，而不会报告其内部的可选元素。对于带有测试标记、可确认 closed mode 的宿主，应用只显示限制诊断，无法捕获或定位其内部节点；普通页面若无法可靠识别 closed Shadow Root，则不会猜测或误报。
 
 ## 开发状态
 
-项目已完成网页端 MVP 的基础连接、快照展示、Phase 2 Selector 核心能力，以及 Phase 3 的同源 frame / open Shadow DOM 上下文支持。后续规划包括项目保存、跨域/OOPIF frame 遍历（Phase 8）、表格识别、UiPath 兼容导出、桌面 UIAutomation 捕获、冻结捕获和高级诊断能力。
+项目当前支持 Chrome/Edge 调试目标连接与恢复、DOM/iframe/open Shadow DOM 快照、元素捕获与属性诊断、Selector 生成与验证，以及标准 HTML 表格预览和 CSV、JSON、Markdown 导出。后续规划包括跨域/OOPIF frame 遍历、高级结构化数据提取、桌面 UIAutomation、UiPath 兼容、项目管理和 AI 辅助等能力。
 
 详细需求见 [REQUIREMENTS.md](./REQUIREMENTS.md)。

@@ -23,14 +23,70 @@ export const SNAPSHOT_SCRIPT = `(() => {
     hostAttributes: { ...boundary.hostAttributes }
   }));
   const roleFor = (element) => element.getAttribute?.("role") || element.getAttribute?.("aria-role") || "";
-  const visibleFor = (element) => {
+  const referencedText = (element, attributeName) => {
+    const ids = (element.getAttribute?.(attributeName) || "").trim().split(/\\s+/).filter(Boolean);
+    const ownerDocument = element.ownerDocument || document;
+    return ids.map((id) => ownerDocument.getElementById?.(id)?.textContent?.trim() || "").filter(Boolean).join(" ");
+  };
+  const accessibleNameFor = (element) => {
     if (!isElement(element)) {
-      return undefined;
+      return "";
+    }
+    return (
+      element.getAttribute("aria-label") ||
+      referencedText(element, "aria-labelledby") ||
+      Array.from(element.labels || []).map((label) => label.textContent?.trim() || "").filter(Boolean).join(" ") ||
+      element.getAttribute("alt") ||
+      element.getAttribute("title") ||
+      element.getAttribute("placeholder") ||
+      element.textContent?.trim().slice(0, 160) ||
+      ""
+    );
+  };
+  const descriptionFor = (element) =>
+    isElement(element)
+      ? element.getAttribute("aria-description") || referencedText(element, "aria-describedby") || ""
+      : "";
+  const disabledFor = (element) =>
+    isElement(element)
+      ? Boolean(element.disabled || element.getAttribute("aria-disabled") === "true" || element.matches?.(":disabled"))
+      : undefined;
+  const clickableFor = (element, disabled) => {
+    if (!isElement(element) || disabled) {
+      return isElement(element) ? false : undefined;
+    }
+    const tagName = element.tagName.toLowerCase();
+    const role = roleFor(element);
+    return (
+      ["button", "a", "input", "select", "textarea", "summary"].includes(tagName) ||
+      ["button", "link", "checkbox", "radio", "menuitem", "option", "switch", "tab"].includes(role) ||
+      typeof element.onclick === "function" ||
+      element.tabIndex >= 0
+    );
+  };
+  const visibilityFor = (element) => {
+    if (!isElement(element)) {
+      return { visible: undefined, visibilityReasons: [], occluded: undefined };
     }
     const rect = element.getBoundingClientRect();
     const view = element.ownerDocument?.defaultView || window;
     const style = view.getComputedStyle(element);
-    return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none";
+    const visibilityReasons = [];
+    if (style.display === "none") visibilityReasons.push("display-none");
+    if (style.visibility === "hidden" || style.visibility === "collapse") visibilityReasons.push("visibility-hidden");
+    if (Number(style.opacity) === 0) visibilityReasons.push("opacity-zero");
+    if (rect.width <= 0 || rect.height <= 0) visibilityReasons.push("zero-size");
+    const visible = visibilityReasons.length === 0;
+    let occluded = false;
+    if (visible) {
+      const pointX = Math.min(Math.max(rect.left + rect.width / 2, 0), Math.max(0, view.innerWidth - 1));
+      const pointY = Math.min(Math.max(rect.top + rect.height / 2, 0), Math.max(0, view.innerHeight - 1));
+      const root = element.getRootNode?.();
+      const hit = root?.elementFromPoint?.(pointX, pointY) || element.ownerDocument?.elementFromPoint?.(pointX, pointY);
+      occluded = Boolean(hit && hit !== element && !element.contains(hit));
+      if (occluded) visibilityReasons.push("occluded");
+    }
+    return { visible, visibilityReasons, occluded };
   };
   const boxFor = (element) => {
     if (!isElement(element)) {
@@ -92,6 +148,8 @@ export const SNAPSHOT_SCRIPT = `(() => {
     }
 
     const children = [];
+    const disabled = isElement(node) ? disabledFor(node) : undefined;
+    const visibility = visibilityFor(node);
     const base = {
       id,
       parentId,
@@ -102,7 +160,13 @@ export const SNAPSHOT_SCRIPT = `(() => {
       nodeValue: node.nodeType === Node.TEXT_NODE ? node.nodeValue || "" : undefined,
       text: textFor(node),
       role: isElement(node) ? roleFor(node) : undefined,
-      visible: isElement(node) ? visibleFor(node) : undefined,
+      accessibleName: isElement(node) ? accessibleNameFor(node) : undefined,
+      description: isElement(node) ? descriptionFor(node) : undefined,
+      visible: visibility.visible,
+      disabled,
+      clickable: isElement(node) ? clickableFor(node, disabled) : undefined,
+      occluded: visibility.occluded,
+      visibilityReasons: visibility.visibilityReasons,
       boundingBox: isElement(node) ? boxFor(node) : undefined,
       kind,
       context: copyContext(context),

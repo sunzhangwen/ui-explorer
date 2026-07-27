@@ -32,12 +32,17 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { PointerEvent, ReactNode } from "react";
+import { analyzeElementAttributes, type AttributeLocatorMarker } from "../../shared/attributeInsights";
+import { getCaptureCountdown } from "../../shared/captureTiming";
 import { findElementSnapshot, flattenElementSnapshot, formatElementAttributes } from "../../shared/domSnapshot";
 import type { ElementSnapshot, SnapshotDiagnostic, TableExportSaveResult } from "../../shared/ipc";
 import {
   applySelectorEdit,
+  diffSelectorCandidates,
   generateSelectorCandidates,
+  suggestSelectorRepairs,
   type SelectorCandidate,
+  type SelectorDiffEntry,
   type SelectorEdit,
   type SelectorExports,
   type SelectorLayer
@@ -77,6 +82,11 @@ function TreeNodeIcon({ node }: { node: ElementSnapshot }): JSX.Element {
   if (kind === "frame") return <PanelRight size={13} />;
   if (kind === "shadow") return <Layers3 size={13} />;
   if (kind === "diagnostic") return <ShieldAlert size={13} />;
+  if (node.tagName === "iframe") return <PanelRight size={13} />;
+  if (node.tagName === "button") return <MousePointer2 size={13} />;
+  if (["input", "textarea", "select"].includes(node.tagName ?? "")) return <SlidersHorizontal size={13} />;
+  if (node.tagName === "a") return <Globe2 size={13} />;
+  if (node.tagName === "table") return <Table2 size={13} />;
   return <Box size={13} />;
 }
 
@@ -85,13 +95,17 @@ export function WorkbenchLayout(): JSX.Element {
   const {
     appInfo,
     browserConnection,
+    browserDebugEndpoints,
     browserTargets,
     connectBrowser,
     density,
+    discoverBrowserEndpoints,
     disconnectBrowser,
     domSnapshot,
     ipcStatus,
+    isDiscoveringBrowserEndpoints,
     locale,
+    monitorBrowserConnection,
     panelSizes,
     refreshDomSnapshot,
     selectBrowserTarget,
@@ -102,6 +116,8 @@ export function WorkbenchLayout(): JSX.Element {
     saveTableExport,
     selectedBrowserTargetId,
     selectedElementId,
+    selectionRecovery,
+    subscribeCaptureRequested,
     selectedTestPageId,
     setDensity,
     setLocale,
@@ -129,6 +145,54 @@ export function WorkbenchLayout(): JSX.Element {
   const [selectedCandidateId, setSelectedCandidateId] = useState<string | null>(null);
   const [selectorDrafts, setSelectorDrafts] = useState<Record<string, SelectorCandidate>>({});
   const [exportFormat, setExportFormat] = useState<ExportFormat>("json");
+  const [captureDelaySeconds, setCaptureDelaySeconds] = useState(3);
+  const [captureDueAt, setCaptureDueAt] = useState<number | null>(null);
+  const [captureClock, setCaptureClock] = useState(() => Date.now());
+  const captureCountdown = getCaptureCountdown(captureDueAt, captureClock);
+
+  useEffect(() => {
+    const discoveredEndpoint = browserDebugEndpoints[0]?.endpoint;
+    if (discoveredEndpoint && debugEndpoint === "localhost:9222") {
+      setDebugEndpoint(discoveredEndpoint);
+    }
+  }, [browserDebugEndpoints, debugEndpoint]);
+
+  useEffect(() => {
+    if (browserConnection.state !== "connected") {
+      return;
+    }
+    const interval = window.setInterval(() => {
+      void monitorBrowserConnection();
+    }, 2000);
+    return () => window.clearInterval(interval);
+  }, [browserConnection.state, monitorBrowserConnection]);
+
+  useEffect(
+    () =>
+      subscribeCaptureRequested(() => {
+        if (browserConnection.state === "connected") {
+          setCaptureDueAt(null);
+          void refreshDomSnapshot();
+        }
+      }),
+    [browserConnection.state, refreshDomSnapshot, subscribeCaptureRequested]
+  );
+
+  useEffect(() => {
+    if (captureDueAt === null) {
+      return;
+    }
+    setCaptureClock(Date.now());
+    const interval = window.setInterval(() => setCaptureClock(Date.now()), 100);
+    return () => window.clearInterval(interval);
+  }, [captureDueAt]);
+
+  useEffect(() => {
+    if (captureDueAt !== null && captureCountdown.ready) {
+      setCaptureDueAt(null);
+      void refreshDomSnapshot();
+    }
+  }, [captureCountdown.ready, captureDueAt, refreshDomSnapshot]);
 
   const selectedPage = useMemo(
     () => testPages.find((page) => page.id === selectedTestPageId) ?? testPages[0],
@@ -342,6 +406,14 @@ export function WorkbenchLayout(): JSX.Element {
     browserConnection.state === "connected"
       ? browserConnection.message === "no-targets"
         ? t("connection.noTargets")
+        : browserConnection.message === "target-closed"
+          ? t("connection.targetClosed")
+          : browserConnection.message === "reconnected"
+            ? t("connection.reconnected")
+            : browserConnection.message === "navigated"
+              ? t("connection.navigated")
+              : browserConnection.message === "reconnecting"
+                ? t("connection.reconnecting")
         : t("connection.connected")
       : browserConnection.state === "connecting"
         ? t("connection.connecting")
@@ -353,6 +425,15 @@ export function WorkbenchLayout(): JSX.Element {
   };
   const disconnect = () => {
     void disconnectBrowser();
+  };
+  const scheduleCapture = () => {
+    if (captureDelaySeconds === 0) {
+      void refreshDomSnapshot();
+      return;
+    }
+    const now = Date.now();
+    setCaptureClock(now);
+    setCaptureDueAt(now + captureDelaySeconds * 1000);
   };
   const connectionHint =
     browserConnection.state === "error"
@@ -388,18 +469,24 @@ export function WorkbenchLayout(): JSX.Element {
           </div>
           <div>
             <h1>{t("app.title")}</h1>
-            <p>{t("diagnostics.phase")}</p>
+            <p>{t("app.description")}</p>
           </div>
         </div>
 
         <div className="target-control" role="group" aria-label={t("connection.debugPort")}>
           <Globe2 size={16} />
           <input
+            list="browser-debug-endpoints"
             aria-label={t("connection.debugPort")}
             value={debugEndpoint}
             placeholder={t("toolbar.targetPlaceholder")}
             onChange={(event) => setDebugEndpoint(event.target.value)}
           />
+          <datalist id="browser-debug-endpoints">
+            {browserDebugEndpoints.map((item) => (
+              <option key={item.endpoint} value={item.endpoint}>{item.browser}</option>
+            ))}
+          </datalist>
           <button type="button" onClick={browserConnection.state === "connected" ? disconnect : connect}>
             <PlugZap size={15} />
             {browserConnection.state === "connected" ? t("toolbar.disconnect") : t("toolbar.connect")}
@@ -444,6 +531,20 @@ export function WorkbenchLayout(): JSX.Element {
               <span>{t("connection.status")}</span>
               <strong>{connectionLabel}</strong>
               <p>{connectionHint}</p>
+              <button type="button" onClick={() => void discoverBrowserEndpoints()} disabled={isDiscoveringBrowserEndpoints}>
+                <Search size={13} />
+                {isDiscoveringBrowserEndpoints ? t("connection.discovering") : t("connection.discover")}
+              </button>
+              {browserDebugEndpoints.length > 0 ? (
+                <div className="target-list">
+                  {browserDebugEndpoints.map((item) => (
+                    <button type="button" key={item.endpoint} onClick={() => setDebugEndpoint(item.endpoint)}>
+                      <span>{item.browser}</span>
+                      <small>{item.endpoint}</small>
+                    </button>
+                  ))}
+                </div>
+              ) : null}
             </section>
           </CollapsibleSection>
 
@@ -499,6 +600,35 @@ export function WorkbenchLayout(): JSX.Element {
           <div className="panel-strip">
             <PanelTitle icon={<Columns3 size={15} />} title={t("panel.explorer")} />
             <div className="strip-actions">
+              <label className="capture-delay-control">
+                <span>{t("capture.delay")}</span>
+                <select
+                  value={captureDelaySeconds}
+                  onChange={(event) => setCaptureDelaySeconds(Number(event.currentTarget.value))}
+                  disabled={browserConnection.state !== "connected" || captureDueAt !== null}
+                >
+                  <option value={0}>{t("capture.now")}</option>
+                  <option value={3}>3s</option>
+                  <option value={5}>5s</option>
+                  <option value={10}>10s</option>
+                </select>
+              </label>
+              {captureDueAt === null ? (
+                <button
+                  type="button"
+                  title={t("capture.hotkey")}
+                  onClick={scheduleCapture}
+                  disabled={browserConnection.state !== "connected"}
+                >
+                  <RefreshCw size={13} />
+                  {t("capture.start")}
+                </button>
+              ) : (
+                <button type="button" className="selected" onClick={() => setCaptureDueAt(null)}>
+                  <RefreshCw size={13} />
+                  {captureCountdown.remainingSeconds}s · {t("capture.cancel")}
+                </button>
+              )}
               <button
                 type="button"
                 className={isElementPickerEnabled ? "selected" : ""}
@@ -525,6 +655,15 @@ export function WorkbenchLayout(): JSX.Element {
                 <span>
                   {treeRows.length} {t("tree.nodes")}
                 </span>
+                {selectionRecovery ? (
+                  <small>
+                    {selectionRecovery.status === "restored"
+                      ? t("selection.restored")
+                      : selectionRecovery.status === "ambiguous"
+                        ? t("selection.ambiguous")
+                        : t("selection.notFound")}
+                  </small>
+                ) : null}
               </div>
               <div className="tree-search">
                 <Search size={14} />
@@ -633,7 +772,7 @@ export function WorkbenchLayout(): JSX.Element {
             title={t("properties.selected")}
             onToggle={() => toggleRightPanelSection("element")}
           >
-            <ElementDetails element={selectedElement} />
+            <ElementDetails element={selectedElement} root={domSnapshot?.root ?? null} />
           </CollapsibleSection>
 
           <CollapsibleSection
@@ -646,6 +785,8 @@ export function WorkbenchLayout(): JSX.Element {
             <SelectorPanel
               candidates={selectorCandidates}
               diagnostic={selectedElement?.diagnostic}
+              element={selectedElement}
+              root={domSnapshot?.root ?? null}
               selectedCandidate={selectedCandidate}
               selectedCandidateId={activeCandidateId}
               drafts={selectorDrafts}
@@ -974,16 +1115,20 @@ function SelectorPanel({
   candidates,
   diagnostic,
   drafts,
+  element,
   onEdit,
   onSelectCandidate,
+  root,
   selectedCandidate,
   selectedCandidateId
 }: {
   candidates: SelectorCandidate[];
   diagnostic?: SnapshotDiagnostic;
   drafts: Record<string, SelectorCandidate>;
+  element: ElementSnapshot | null;
   onEdit: (candidate: SelectorCandidate, edit: SelectorEdit) => void;
   onSelectCandidate: (id: string) => void;
+  root: ElementSnapshot | null;
   selectedCandidate: SelectorCandidate | null;
   selectedCandidateId: string | null;
 }): JSX.Element {
@@ -1006,6 +1151,17 @@ function SelectorPanel({
     return <p className="empty-copy">{t("empty.selector")}</p>;
   }
 
+  const originalCandidate = candidates.find((candidate) => candidate.id === selectedCandidate.id) ?? selectedCandidate;
+  const changes = diffSelectorCandidates(originalCandidate, selectedCandidate);
+  const repairs = suggestSelectorRepairs(root, selectedCandidate);
+  const targetTooltip = [
+    element?.tagName ?? element?.nodeName ?? "-",
+    `role=${element?.role || "-"}`,
+    `name=${element?.accessibleName || "-"}`,
+    `score=${selectedCandidate.score.total}`,
+    `matches=${selectedCandidate.validation.matchCount}`
+  ].join(" · ");
+
   return (
     <div className="selector-stack">
       <div className="selector-candidates" role="tablist" aria-label={t("selector.candidates")}>
@@ -1026,7 +1182,7 @@ function SelectorPanel({
       </div>
 
       <section className="property-card selector-card">
-        <div className="selector-headline">
+        <div className="selector-headline" title={targetTooltip}>
           <StatusIcon status={selectedCandidate.validation.status} />
           <code>{selectedCandidate.selector}</code>
         </div>
@@ -1036,6 +1192,20 @@ function SelectorPanel({
           <Metric label={t("selector.stability")} value={String(selectedCandidate.score.stability)} />
           <Metric label={t("selector.readability")} value={String(selectedCandidate.score.readability)} />
         </div>
+      </section>
+
+      <section className="property-card selector-card">
+        <h3>{t("selector.diff")}</h3>
+        {changes.length === 0 ? (
+          <p className="empty-copy">{t("selector.diffEmpty")}</p>
+        ) : (
+          changes.map((change, index) => (
+            <div className="selector-diff" key={`${change.layerId}-${change.field}-${change.attributeName ?? ""}-${index}`}>
+              <span>{formatSelectorDiffLabel(change)}</span>
+              <code>{String(change.before)} → {String(change.after)}</code>
+            </div>
+          ))
+        )}
       </section>
 
       <section className="property-card selector-card">
@@ -1093,6 +1263,10 @@ function SelectorPanel({
 
       <section className="property-card selector-card">
         <h3>{t("selector.diagnostics")}</h3>
+        <div className="selector-validation-summary" data-status={selectedCandidate.validation.status}>
+          <StatusIcon status={selectedCandidate.validation.status} />
+          <span>{t(getSelectorValidationMessageKey(selectedCandidate.validation.status))}</span>
+        </div>
         {selectedCandidate.score.risks.length === 0 ? (
           <p className="empty-copy">{t("selector.noRisks")}</p>
         ) : (
@@ -1103,9 +1277,35 @@ function SelectorPanel({
             </div>
           ))
         )}
+        {repairs.length > 0 ? (
+          <div className="selector-repairs">
+            <h3>{t("selector.repairs")}</h3>
+            {repairs.map((repair, index) => (
+              <button
+                type="button"
+                key={`${repair.code}-${repair.selector}-${index}`}
+                onClick={() => onEdit(selectedCandidate, repair.edit)}
+              >
+                <CheckCircle2 size={13} />
+                <span>{t("selector.repair.enableAttribute")}</span>
+                <code>{repair.selector}</code>
+              </button>
+            ))}
+          </div>
+        ) : null}
       </section>
     </div>
   );
+}
+
+function formatSelectorDiffLabel(change: SelectorDiffEntry): string {
+  return change.attributeName
+    ? `${change.layerId}.${change.attributeName}`
+    : `${change.layerId}.${change.field}`;
+}
+
+function getSelectorValidationMessageKey(status: SelectorCandidate["validation"]["status"]): MessageKey {
+  return `selector.validation.${status}`;
 }
 
 function StatusIcon({ status }: { status: SelectorCandidate["validation"]["status"] }): JSX.Element {
@@ -1272,8 +1472,19 @@ function VirtualTree({
   );
 }
 
-function ElementDetails({ element }: { element: ElementSnapshot | null }): JSX.Element {
+function ElementDetails({
+  element,
+  root
+}: {
+  element: ElementSnapshot | null;
+  root: ElementSnapshot | null;
+}): JSX.Element {
   const { t } = useI18n();
+  const [attributeQuery, setAttributeQuery] = useState("");
+  const attributeInsights = useMemo(
+    () => analyzeElementAttributes(root, element?.id ?? null, attributeQuery),
+    [attributeQuery, element?.id, root]
+  );
 
   if (!element) {
     return <p className="empty-copy">{t("empty.properties")}</p>;
@@ -1282,7 +1493,6 @@ function ElementDetails({ element }: { element: ElementSnapshot | null }): JSX.E
   const bounds = element.boundingBox
     ? `${Math.round(element.boundingBox.x)}, ${Math.round(element.boundingBox.y)}, ${Math.round(element.boundingBox.width)} x ${Math.round(element.boundingBox.height)}`
     : "-";
-  const attributeEntries = Object.entries(element.attributes);
   const context = element.context ?? [];
   const contextPaths = getContextPathLabels(context);
   const diagnosticPresentation = element.diagnostic ? getDiagnosticPresentation(element.diagnostic) : null;
@@ -1300,6 +1510,10 @@ function ElementDetails({ element }: { element: ElementSnapshot | null }): JSX.E
       <section className="property-card">
         <h3>{t("properties.accessibility")}</h3>
         <PropertyRow label={t("properties.role")} value={element.role || "-"} />
+        <PropertyRow label={t("properties.accessibleName")} value={element.accessibleName || "-"} />
+        <PropertyRow label={t("properties.description")} value={element.description || "-"} />
+        <PropertyRow label={t("properties.disabled")} value={formatBoolean(element.disabled, t)} />
+        <PropertyRow label={t("properties.clickable")} value={formatBoolean(element.clickable, t)} />
         <PropertyRow
           label={t("properties.visible")}
           value={visibilityMessageKey ? t(visibilityMessageKey) : "-"}
@@ -1308,6 +1522,11 @@ function ElementDetails({ element }: { element: ElementSnapshot | null }): JSX.E
       <section className="property-card">
         <h3>{t("properties.layout")}</h3>
         <PropertyRow label={t("properties.boundingBox")} value={bounds} />
+        <PropertyRow label={t("properties.occluded")} value={formatBoolean(element.occluded, t)} />
+        <PropertyRow
+          label={t("properties.visibilityReasons")}
+          value={element.visibilityReasons?.join(", ") || "-"}
+        />
       </section>
       <section className="property-card">
         <h3>{t("properties.context")}</h3>
@@ -1331,10 +1550,32 @@ function ElementDetails({ element }: { element: ElementSnapshot | null }): JSX.E
       ) : null}
       <section className="property-card">
         <h3>{t("properties.attributes")}</h3>
-        {attributeEntries.length === 0 ? (
+        <label className="attribute-filter">
+          <Search size={13} />
+          <input
+            value={attributeQuery}
+            placeholder={t("properties.filterAttributes")}
+            onChange={(event) => setAttributeQuery(event.currentTarget.value)}
+          />
+        </label>
+        {attributeInsights.length === 0 ? (
           <PropertyRow label="-" value="-" />
         ) : (
-          attributeEntries.map(([name, value]) => <PropertyRow key={name} label={name} value={value} />)
+          attributeInsights.map((attribute) => (
+            <div className="attribute-insight" key={attribute.name}>
+              <div className="property-row">
+                <span>{attribute.name}</span>
+                <strong>{attribute.value}</strong>
+              </div>
+              <div className="attribute-markers">
+                {(attribute.markers.length > 0 ? attribute.markers : ["neutral" as const]).map((marker) => (
+                  <span data-marker={marker} key={marker}>
+                    {t(getAttributeMarkerMessageKey(marker))}
+                  </span>
+                ))}
+              </div>
+            </div>
+          ))
         )}
       </section>
     </div>
@@ -1348,6 +1589,14 @@ function PropertyRow({ label, value }: { label: string; value: string }): JSX.El
       <strong>{value}</strong>
     </div>
   );
+}
+
+function getAttributeMarkerMessageKey(marker: AttributeLocatorMarker | "neutral"): MessageKey {
+  return `properties.attribute.${marker}`;
+}
+
+function formatBoolean(value: boolean | undefined, t: (key: MessageKey) => string): string {
+  return typeof value === "boolean" ? t(value ? "properties.yes" : "properties.no") : "-";
 }
 
 function PanelTitle({ icon, title }: { icon: ReactNode; title: string }): JSX.Element {

@@ -8,6 +8,17 @@ export type ElementSnapshotStats = {
   inaccessibleContexts: number;
 };
 
+export type ElementSelectionRestoreResult =
+  | {
+      elementId: string;
+      status: "restored";
+      strategy: "stable-attribute" | "semantic";
+    }
+  | {
+      elementId: null;
+      status: "not-found" | "ambiguous";
+    };
+
 export function flattenElementSnapshot(root: ElementSnapshot | null): ElementSnapshot[] {
   if (!root) {
     return [];
@@ -95,4 +106,77 @@ export function normalizeDebugEndpoint(endpoint: string): string {
   const withProtocol = /^https?:\/\//i.test(trimmed) ? trimmed : `http://${trimmed}`;
   const url = new URL(withProtocol);
   return `${url.protocol}//${url.host}`;
+}
+
+const STABLE_ID_PATTERN = /^[a-z][a-z0-9_-]{0,79}$/i;
+const STABLE_ATTRIBUTE_WEIGHTS: Record<string, number> = {
+  "data-testid": 100,
+  "data-test": 95,
+  "data-qa": 95,
+  id: 90,
+  name: 60,
+  "aria-label": 50,
+  title: 20
+};
+
+export function restoreElementSelection(
+  previousRoot: ElementSnapshot | null,
+  nextRoot: ElementSnapshot | null,
+  previousElementId: string | null
+): ElementSelectionRestoreResult {
+  const previous = previousElementId ? findElementSnapshot(previousRoot, previousElementId) : null;
+  if (!previous || !nextRoot) {
+    return { elementId: null, status: "not-found" };
+  }
+
+  const candidates = flattenElementSnapshot(nextRoot).filter(
+    (candidate) => candidate.kind === previous.kind && candidate.tagName === previous.tagName
+  );
+  const stableAttributes = Object.entries(previous.attributes).filter(
+    ([name, value]) =>
+      Boolean(value) &&
+      name in STABLE_ATTRIBUTE_WEIGHTS &&
+      (name !== "id" || STABLE_ID_PATTERN.test(value))
+  );
+  const stableMatches = candidates
+    .map((candidate) => ({
+      candidate,
+      score: stableAttributes.reduce(
+        (score, [name, value]) =>
+          score + (candidate.attributes[name] === value ? STABLE_ATTRIBUTE_WEIGHTS[name] : 0),
+        0
+      )
+    }))
+    .filter((match) => match.score > 0)
+    .sort((left, right) => right.score - left.score);
+  const strongestMatches = stableMatches.filter((match) => match.score === stableMatches[0]?.score);
+
+  if (strongestMatches.length === 1) {
+    return { elementId: strongestMatches[0].candidate.id, status: "restored", strategy: "stable-attribute" };
+  }
+  if (strongestMatches.length > 1) {
+    return { elementId: null, status: "ambiguous" };
+  }
+
+  const semanticMatches = candidates.filter(
+    (candidate) =>
+      Boolean(previous.text || previous.role) &&
+      candidate.text === previous.text &&
+      candidate.role === previous.role &&
+      contextSignature(candidate.context) === contextSignature(previous.context)
+  );
+  if (semanticMatches.length === 1) {
+    return { elementId: semanticMatches[0].id, status: "restored", strategy: "semantic" };
+  }
+  return { elementId: null, status: semanticMatches.length > 1 ? "ambiguous" : "not-found" };
+}
+
+function contextSignature(context: ContextBoundary[] | undefined): string {
+  return JSON.stringify(
+    (context ?? []).map((boundary) => ({
+      kind: boundary.kind,
+      hostTagName: boundary.hostTagName,
+      hostAttributes: boundary.hostAttributes
+    }))
+  );
 }

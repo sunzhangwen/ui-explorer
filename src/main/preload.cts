@@ -6,7 +6,9 @@ const IPC_CHANNELS = {
   ping: "app:ping",
   getAppInfo: "app:get-info",
   listTestPages: "test-pages:list",
+  discoverBrowserEndpoints: "browser:discover-endpoints",
   connectBrowser: "browser:connect",
+  refreshBrowserConnection: "browser:refresh-connection",
   disconnectBrowser: "browser:disconnect",
   listBrowserTargets: "browser:list-targets",
   selectBrowserTarget: "browser:select-target",
@@ -15,6 +17,7 @@ const IPC_CHANNELS = {
   highlightElements: "browser:highlight-elements",
   setElementPickerEnabled: "browser:set-element-picker-enabled",
   getPickedElementId: "browser:get-picked-element-id",
+  captureRequested: "browser:capture-requested",
   saveTableExport: "table:save-export"
 } as const;
 
@@ -22,7 +25,9 @@ const api: IpcApi = {
   ping: () => ipcRenderer.invoke(IPC_CHANNELS.ping),
   getAppInfo: () => ipcRenderer.invoke(IPC_CHANNELS.getAppInfo),
   listTestPages: () => ipcRenderer.invoke(IPC_CHANNELS.listTestPages),
+  discoverBrowserEndpoints: () => ipcRenderer.invoke(IPC_CHANNELS.discoverBrowserEndpoints),
   connectBrowser: (endpoint) => ipcRenderer.invoke(IPC_CHANNELS.connectBrowser, endpoint),
+  refreshBrowserConnection: () => ipcRenderer.invoke(IPC_CHANNELS.refreshBrowserConnection),
   disconnectBrowser: () => ipcRenderer.invoke(IPC_CHANNELS.disconnectBrowser),
   listBrowserTargets: () => ipcRenderer.invoke(IPC_CHANNELS.listBrowserTargets),
   selectBrowserTarget: (targetId) => ipcRenderer.invoke(IPC_CHANNELS.selectBrowserTarget, targetId),
@@ -31,6 +36,11 @@ const api: IpcApi = {
   highlightElements: (request) => ipcRenderer.invoke(IPC_CHANNELS.highlightElements, request),
   setElementPickerEnabled: (enabled) => ipcRenderer.invoke(IPC_CHANNELS.setElementPickerEnabled, enabled),
   getPickedElementId: () => ipcRenderer.invoke(IPC_CHANNELS.getPickedElementId),
+  onCaptureRequested: (listener) => {
+    const handler = () => listener();
+    ipcRenderer.on(IPC_CHANNELS.captureRequested, handler);
+    return () => ipcRenderer.off(IPC_CHANNELS.captureRequested, handler);
+  },
   saveTableExport: (request) => ipcRenderer.invoke(IPC_CHANNELS.saveTableExport, request)
 };
 

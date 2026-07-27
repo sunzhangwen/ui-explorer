@@ -1,5 +1,6 @@
 export type MessageKey =
   | "app.title"
+  | "app.description"
   | "toolbar.targetPlaceholder"
   | "toolbar.connect"
   | "toolbar.disconnect"
@@ -10,13 +11,17 @@ export type MessageKey =
   | "toolbar.ipcReady"
   | "toolbar.ipcError"
   | "toolbar.pickElement"
+  | "capture.delay"
+  | "capture.now"
+  | "capture.start"
+  | "capture.cancel"
+  | "capture.hotkey"
   | "panel.targets"
   | "panel.explorer"
   | "panel.properties"
   | "panel.selector"
   | "panel.tableData"
   | "panel.tests"
-  | "empty.tree"
   | "empty.properties"
   | "empty.selector"
   | "connection.status"
@@ -25,8 +30,17 @@ export type MessageKey =
   | "connection.connected"
   | "connection.error"
   | "connection.noTargets"
+  | "connection.targetClosed"
+  | "connection.reconnected"
+  | "connection.navigated"
+  | "connection.reconnecting"
   | "connection.debugPort"
   | "connection.guide"
+  | "connection.discover"
+  | "connection.discovering"
+  | "selection.restored"
+  | "selection.ambiguous"
+  | "selection.notFound"
   | "target.current"
   | "target.empty"
   | "tree.nodes"
@@ -49,6 +63,19 @@ export type MessageKey =
   | "properties.hidden"
   | "properties.boundingBox"
   | "properties.role"
+  | "properties.accessibleName"
+  | "properties.description"
+  | "properties.disabled"
+  | "properties.clickable"
+  | "properties.occluded"
+  | "properties.visibilityReasons"
+  | "properties.yes"
+  | "properties.no"
+  | "properties.filterAttributes"
+  | "properties.attribute.unique"
+  | "properties.attribute.stable"
+  | "properties.attribute.dynamic"
+  | "properties.attribute.neutral"
   | "properties.tag"
   | "properties.nodeName"
   | "properties.nodeType"
@@ -57,7 +84,6 @@ export type MessageKey =
   | "properties.shadowPath"
   | "preview.title"
   | "preview.openPage"
-  | "preview.monaco"
   | "preview.currentTarget"
   | "preview.selectedSnapshot"
   | "selector.candidates"
@@ -75,6 +101,14 @@ export type MessageKey =
   | "selector.layer.target"
   | "selector.diagnostics"
   | "selector.noRisks"
+  | "selector.diff"
+  | "selector.diffEmpty"
+  | "selector.repairs"
+  | "selector.repair.enableAttribute"
+  | "selector.validation.unique"
+  | "selector.validation.multiple"
+  | "selector.validation.missing"
+  | "selector.validation.mismatch"
   | "selector.exportPreview"
   | "selector.export.json"
   | "selector.export.playwright"
@@ -105,7 +139,6 @@ export type MessageKey =
   | "diagnostic.crossOriginFrame"
   | "diagnostic.closedShadowRoot"
   | "diagnostic.detachedContext"
-  | "diagnostics.phase"
   | "diagnostics.ipc"
   | "diagnostics.app"
   | "diagnostics.nodes"
@@ -137,23 +170,36 @@ export const messages: Record<"zh-CN" | "en-US", Record<MessageKey, string>> = {
     "toolbar.ipcReady": "IPC 已就绪",
     "toolbar.ipcError": "IPC 异常",
     "toolbar.pickElement": "点选",
+    "capture.delay": "延迟",
+    "capture.now": "立即",
+    "capture.start": "捕获",
+    "capture.cancel": "取消",
+    "capture.hotkey": "全局热键：Ctrl/Cmd+Shift+E",
     "panel.targets": "目标",
     "panel.explorer": "结构",
     "panel.properties": "属性",
     "panel.selector": "Selector",
     "panel.tableData": "表格数据",
     "panel.tests": "测试页面",
-    "empty.tree": "Phase 1 会在这里显示 DOM、iframe 和 Shadow 层级。",
     "empty.properties": "选择元素后，这里会显示属性、可访问性和布局信息。",
-    "empty.selector": "Selector 候选、评分和诊断将在 Phase 2 接入。",
+    "empty.selector": "选择页面元素后，这里会显示 Selector 候选、评分和诊断。",
     "connection.status": "连接状态",
     "connection.notConnected": "未连接调试目标",
     "connection.connecting": "正在连接",
     "connection.connected": "已连接调试目标",
     "connection.error": "连接异常",
     "connection.noTargets": "未发现可检查页面",
+    "connection.targetClosed": "目标已关闭，正在等待重连",
+    "connection.reconnected": "已恢复连接",
+    "connection.navigated": "页面已刷新或跳转",
+    "connection.reconnecting": "连接中断，正在重试",
     "connection.debugPort": "调试端口",
     "connection.guide": "启动 Chrome/Edge 时添加 --remote-debugging-port=9222。",
+    "connection.discover": "扫描本机端点",
+    "connection.discovering": "正在扫描",
+    "selection.restored": "已恢复原选择",
+    "selection.ambiguous": "原选择存在多个候选，已回到根节点",
+    "selection.notFound": "原选择已消失，已回到根节点",
     "target.current": "当前页面",
     "target.empty": "连接后会显示 Chrome/Edge 可检查页面。",
     "tree.nodes": "节点",
@@ -176,6 +222,19 @@ export const messages: Record<"zh-CN" | "en-US", Record<MessageKey, string>> = {
     "properties.hidden": "不可见",
     "properties.boundingBox": "边界",
     "properties.role": "角色",
+    "properties.accessibleName": "可访问名称",
+    "properties.description": "可访问描述",
+    "properties.disabled": "已禁用",
+    "properties.clickable": "可点击",
+    "properties.occluded": "被遮挡",
+    "properties.visibilityReasons": "不可见/遮挡原因",
+    "properties.yes": "是",
+    "properties.no": "否",
+    "properties.filterAttributes": "按属性名或值过滤",
+    "properties.attribute.unique": "唯一",
+    "properties.attribute.stable": "稳定",
+    "properties.attribute.dynamic": "疑似动态",
+    "properties.attribute.neutral": "一般",
     "properties.tag": "标签",
     "properties.nodeName": "节点名",
     "properties.nodeType": "节点类型",
@@ -184,7 +243,6 @@ export const messages: Record<"zh-CN" | "en-US", Record<MessageKey, string>> = {
     "properties.shadowPath": "Shadow 路径",
     "preview.title": "验收样例",
     "preview.openPage": "打开页面",
-    "preview.monaco": "导出预览占位",
     "preview.currentTarget": "当前页面",
     "preview.selectedSnapshot": "选中元素快照",
     "selector.candidates": "Selector 候选",
@@ -202,6 +260,14 @@ export const messages: Record<"zh-CN" | "en-US", Record<MessageKey, string>> = {
     "selector.layer.target": "目标层",
     "selector.diagnostics": "诊断",
     "selector.noRisks": "暂无风险",
+    "selector.diff": "修改记录",
+    "selector.diffEmpty": "尚未修改",
+    "selector.repairs": "确定性修复建议",
+    "selector.repair.enableAttribute": "启用已验证的稳定属性",
+    "selector.validation.unique": "唯一匹配当前目标",
+    "selector.validation.multiple": "匹配多个候选",
+    "selector.validation.missing": "未找到匹配元素",
+    "selector.validation.mismatch": "唯一匹配指向其他元素",
     "selector.exportPreview": "导出预览",
     "selector.export.json": "JSON",
     "selector.export.playwright": "Playwright",
@@ -232,7 +298,7 @@ export const messages: Record<"zh-CN" | "en-US", Record<MessageKey, string>> = {
     "diagnostic.crossOriginFrame": "跨域 Frame 内容不可访问",
     "diagnostic.closedShadowRoot": "Closed Shadow Root 内容不可访问",
     "diagnostic.detachedContext": "上下文已分离，无法访问",
-    "diagnostics.phase": "Phase 1 网页连接与元素捕获",
+    "app.description": "连接并检查网页 UI，生成 Selector 与结构化数据",
     "diagnostics.ipc": "主进程往返",
     "diagnostics.app": "运行环境",
     "diagnostics.nodes": "快照节点",
@@ -263,23 +329,36 @@ export const messages: Record<"zh-CN" | "en-US", Record<MessageKey, string>> = {
     "toolbar.ipcReady": "IPC ready",
     "toolbar.ipcError": "IPC error",
     "toolbar.pickElement": "Pick",
+    "capture.delay": "Delay",
+    "capture.now": "Now",
+    "capture.start": "Capture",
+    "capture.cancel": "Cancel",
+    "capture.hotkey": "Global hotkey: Ctrl/Cmd+Shift+E",
     "panel.targets": "Targets",
     "panel.explorer": "Structure",
     "panel.properties": "Properties",
     "panel.selector": "Selector",
     "panel.tableData": "Table data",
     "panel.tests": "Test pages",
-    "empty.tree": "Phase 1 will render DOM, iframe, and Shadow hierarchy here.",
     "empty.properties": "Selected element attributes, accessibility, and layout will appear here.",
-    "empty.selector": "Selector candidates, scoring, and diagnostics arrive in Phase 2.",
+    "empty.selector": "Select a page element to view selector candidates, scores, and diagnostics.",
     "connection.status": "Connection",
     "connection.notConnected": "No debug target connected",
     "connection.connecting": "Connecting",
     "connection.connected": "Debug target connected",
     "connection.error": "Connection error",
     "connection.noTargets": "No inspectable pages found",
+    "connection.targetClosed": "Target closed; waiting to reconnect",
+    "connection.reconnected": "Connection restored",
+    "connection.navigated": "Page refreshed or navigated",
+    "connection.reconnecting": "Connection interrupted; retrying",
     "connection.debugPort": "Debug port",
     "connection.guide": "Start Chrome/Edge with --remote-debugging-port=9222.",
+    "connection.discover": "Scan local endpoints",
+    "connection.discovering": "Scanning",
+    "selection.restored": "Previous selection restored",
+    "selection.ambiguous": "Previous selection is ambiguous; returned to root",
+    "selection.notFound": "Previous selection disappeared; returned to root",
     "target.current": "Current page",
     "target.empty": "Inspectable Chrome/Edge pages appear after connecting.",
     "tree.nodes": "Nodes",
@@ -302,6 +381,19 @@ export const messages: Record<"zh-CN" | "en-US", Record<MessageKey, string>> = {
     "properties.hidden": "Hidden",
     "properties.boundingBox": "Bounds",
     "properties.role": "Role",
+    "properties.accessibleName": "Accessible name",
+    "properties.description": "Description",
+    "properties.disabled": "Disabled",
+    "properties.clickable": "Clickable",
+    "properties.occluded": "Occluded",
+    "properties.visibilityReasons": "Visibility reasons",
+    "properties.yes": "Yes",
+    "properties.no": "No",
+    "properties.filterAttributes": "Filter by attribute name or value",
+    "properties.attribute.unique": "Unique",
+    "properties.attribute.stable": "Stable",
+    "properties.attribute.dynamic": "Possibly dynamic",
+    "properties.attribute.neutral": "Neutral",
     "properties.tag": "Tag",
     "properties.nodeName": "Node name",
     "properties.nodeType": "Node type",
@@ -310,7 +402,6 @@ export const messages: Record<"zh-CN" | "en-US", Record<MessageKey, string>> = {
     "properties.shadowPath": "Shadow path",
     "preview.title": "Acceptance samples",
     "preview.openPage": "Open page",
-    "preview.monaco": "Export preview placeholder",
     "preview.currentTarget": "Current page",
     "preview.selectedSnapshot": "Selected element snapshot",
     "selector.candidates": "Selector candidates",
@@ -328,6 +419,14 @@ export const messages: Record<"zh-CN" | "en-US", Record<MessageKey, string>> = {
     "selector.layer.target": "Target layer",
     "selector.diagnostics": "Diagnostics",
     "selector.noRisks": "No risks",
+    "selector.diff": "Changes",
+    "selector.diffEmpty": "No changes",
+    "selector.repairs": "Deterministic repairs",
+    "selector.repair.enableAttribute": "Enable validated stable attribute",
+    "selector.validation.unique": "Uniquely matches the current target",
+    "selector.validation.multiple": "Matches multiple candidates",
+    "selector.validation.missing": "No matching element",
+    "selector.validation.mismatch": "Unique match points to another element",
     "selector.exportPreview": "Export preview",
     "selector.export.json": "JSON",
     "selector.export.playwright": "Playwright",
@@ -358,7 +457,7 @@ export const messages: Record<"zh-CN" | "en-US", Record<MessageKey, string>> = {
     "diagnostic.crossOriginFrame": "Cross-origin frame content is unavailable",
     "diagnostic.closedShadowRoot": "Closed Shadow Root content is unavailable",
     "diagnostic.detachedContext": "The browsing context is detached and unavailable",
-    "diagnostics.phase": "Phase 1 web capture MVP",
+    "app.description": "Inspect web UI, generate selectors, and extract structured data",
     "diagnostics.ipc": "Main process round trip",
     "diagnostics.app": "Runtime",
     "diagnostics.nodes": "Snapshot nodes",

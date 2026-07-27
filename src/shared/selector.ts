@@ -114,6 +114,22 @@ export type SelectorEdit =
       value: string;
     };
 
+export type SelectorDiffEntry = {
+  layerId: string;
+  field: "layer-enabled" | "tag-enabled" | "attribute-enabled" | "attribute-value";
+  attributeName?: string;
+  before: boolean | string;
+  after: boolean | string;
+};
+
+export type SelectorRepairSuggestion = {
+  code: "enable-attribute";
+  messageKey: string;
+  edit: SelectorEdit;
+  selector: string;
+  validation: SelectorValidation;
+};
+
 const HIGH_VALUE_ATTRIBUTES = ["data-testid", "data-test", "data-cy", "aria-label"] as const;
 const MEDIUM_VALUE_ATTRIBUTES = ["name", "placeholder", "title", "type"] as const;
 const TEXT_ATTRIBUTE_NAME = "text";
@@ -198,6 +214,98 @@ export function applySelectorEdit(
 
   const targetLayer = layers.find((layer) => layer.kind === "target");
   return createCandidate(root, targetLayer?.nodeId ?? "", candidate.type, layers);
+}
+
+export function diffSelectorCandidates(
+  original: SelectorCandidate,
+  edited: SelectorCandidate
+): SelectorDiffEntry[] {
+  const editedLayers = new Map(edited.layers.map((layer) => [layer.id, layer]));
+  return original.layers.flatMap((originalLayer) => {
+    const editedLayer = editedLayers.get(originalLayer.id);
+    if (!editedLayer) {
+      return [];
+    }
+    const changes: SelectorDiffEntry[] = [];
+    if (originalLayer.enabled !== editedLayer.enabled) {
+      changes.push({
+        layerId: originalLayer.id,
+        field: "layer-enabled",
+        before: originalLayer.enabled,
+        after: editedLayer.enabled
+      });
+    }
+    if (originalLayer.tagEnabled !== editedLayer.tagEnabled) {
+      changes.push({
+        layerId: originalLayer.id,
+        field: "tag-enabled",
+        before: originalLayer.tagEnabled,
+        after: editedLayer.tagEnabled
+      });
+    }
+    const editedAttributes = new Map(editedLayer.attributes.map((attribute) => [attribute.name, attribute]));
+    for (const originalAttribute of originalLayer.attributes) {
+      const editedAttribute = editedAttributes.get(originalAttribute.name);
+      if (!editedAttribute) {
+        continue;
+      }
+      if (originalAttribute.enabled !== editedAttribute.enabled) {
+        changes.push({
+          layerId: originalLayer.id,
+          field: "attribute-enabled",
+          attributeName: originalAttribute.name,
+          before: originalAttribute.enabled,
+          after: editedAttribute.enabled
+        });
+      }
+      if (originalAttribute.value !== editedAttribute.value) {
+        changes.push({
+          layerId: originalLayer.id,
+          field: "attribute-value",
+          attributeName: originalAttribute.name,
+          before: originalAttribute.value,
+          after: editedAttribute.value
+        });
+      }
+    }
+    return changes;
+  });
+}
+
+export function suggestSelectorRepairs(
+  root: ElementSnapshot | null,
+  candidate: SelectorCandidate
+): SelectorRepairSuggestion[] {
+  if (!root || candidate.validation.status === "unique") {
+    return [];
+  }
+
+  return candidate.layers
+    .filter((layer) => layer.enabled)
+    .flatMap((layer) =>
+      layer.attributes
+        .filter((attribute) => attribute.stable && !attribute.enabled)
+        .map((attribute) => {
+          const edit: SelectorEdit = {
+            layerId: layer.id,
+            attributeName: attribute.name,
+            enabled: true
+          };
+          const repaired = applySelectorEdit(root, candidate, edit);
+          return {
+            code: "enable-attribute" as const,
+            messageKey: "selector.repair.enableAttribute",
+            edit,
+            selector: repaired.selector,
+            validation: repaired.validation,
+            score: repaired.score.total
+          };
+        })
+    )
+    .filter((suggestion) => suggestion.validation.status === "unique" && suggestion.validation.targetConsistent)
+    .sort((left, right) => right.score - left.score)
+    .slice(0, 3)
+    .map(({ score: _score, ...suggestion }) => suggestion);
 }
 
 export function buildSelectorExports(candidate: SelectorCandidate): SelectorExports {

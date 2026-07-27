@@ -25,6 +25,12 @@ export type BrowserTarget = {
   webSocketDebuggerUrl?: string;
 };
 
+export type BrowserDebugEndpoint = {
+  endpoint: string;
+  browser: string;
+  webSocketDebuggerUrl?: string;
+};
+
 export type BoundingBox = {
   x: number;
   y: number;
@@ -84,7 +90,13 @@ export type ElementSnapshot = {
   nodeValue?: string;
   text?: string;
   role?: string;
+  accessibleName?: string;
+  description?: string;
   visible?: boolean;
+  disabled?: boolean;
+  clickable?: boolean;
+  occluded?: boolean;
+  visibilityReasons?: string[];
   boundingBox?: BoundingBox;
   kind?: ElementNodeKind;
   context?: ContextBoundary[];
@@ -104,6 +116,7 @@ export type DomSnapshotResult = {
 export type BrowserConnectionInfo = {
   endpoint: string;
   connected: boolean;
+  status: "connected" | "no-targets" | "target-closed" | "reconnected" | "navigated";
   targetId: string | null;
   targets: BrowserTarget[];
   diagnostics?: BrowserConnectionDiagnostics;
@@ -131,7 +144,9 @@ export type IpcApi = {
   ping: () => Promise<string>;
   getAppInfo: () => Promise<AppInfo>;
   listTestPages: () => Promise<TestPage[]>;
+  discoverBrowserEndpoints: () => Promise<BrowserDebugEndpoint[]>;
   connectBrowser: (endpoint: string) => Promise<BrowserConnectionInfo>;
+  refreshBrowserConnection: () => Promise<BrowserConnectionInfo>;
   disconnectBrowser: () => Promise<void>;
   listBrowserTargets: () => Promise<BrowserTarget[]>;
   selectBrowserTarget: (targetId: string) => Promise<DomSnapshotResult>;
@@ -140,6 +155,7 @@ export type IpcApi = {
   highlightElements: (request: HighlightElementsRequest) => Promise<HighlightResult>;
   setElementPickerEnabled: (enabled: boolean) => Promise<void>;
   getPickedElementId: () => Promise<string | null>;
+  onCaptureRequested: (listener: () => void) => () => void;
   saveTableExport: (request: TableExportSaveRequest) => Promise<TableExportSaveResult>;
 };
 
@@ -186,7 +202,9 @@ export const IPC_CHANNELS = {
   ping: "app:ping",
   getAppInfo: "app:get-info",
   listTestPages: "test-pages:list",
+  discoverBrowserEndpoints: "browser:discover-endpoints",
   connectBrowser: "browser:connect",
+  refreshBrowserConnection: "browser:refresh-connection",
   disconnectBrowser: "browser:disconnect",
   listBrowserTargets: "browser:list-targets",
   selectBrowserTarget: "browser:select-target",
@@ -195,5 +213,6 @@ export const IPC_CHANNELS = {
   highlightElements: "browser:highlight-elements",
   setElementPickerEnabled: "browser:set-element-picker-enabled",
   getPickedElementId: "browser:get-picked-element-id",
+  captureRequested: "browser:capture-requested",
   saveTableExport: "table:save-export"
 } as const;

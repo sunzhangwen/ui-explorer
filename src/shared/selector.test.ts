@@ -5,7 +5,9 @@ import {
   applySelectorEdit,
   buildSelectorExports,
   buildUnavailableContextExports,
-  generateSelectorCandidates
+  diffSelectorCandidates,
+  generateSelectorCandidates,
+  suggestSelectorRepairs
 } from "./selector.js";
 import type { ElementSnapshot } from "./ipc.js";
 
@@ -916,6 +918,55 @@ test("applySelectorEdit recalculates selector and validation when an attribute i
   assert.equal(edited.validation.matchCount, 2);
   assert.equal(edited.selector, "button");
   assert.ok(edited.score.risks.some((risk) => risk.code === "not-unique"));
+});
+
+test("SelectorGuidance records attribute toggles and value changes", () => {
+  const original = generateSelectorCandidates(snapshot, "primary").find((item) => item.type === "css");
+  assert.ok(original);
+  const disabled = applySelectorEdit(snapshot, original, {
+    layerId: "target",
+    attributeName: "data-testid",
+    enabled: false
+  });
+  const edited = applySelectorEdit(snapshot, disabled, {
+    layerId: "target",
+    attributeName: "class",
+    value: "btn changed"
+  });
+
+  assert.deepEqual(diffSelectorCandidates(original, edited), [
+    {
+      layerId: "target",
+      field: "attribute-enabled",
+      attributeName: "data-testid",
+      before: true,
+      after: false
+    },
+    {
+      layerId: "target",
+      field: "attribute-value",
+      attributeName: "class",
+      before: "btn primary",
+      after: "btn changed"
+    }
+  ]);
+});
+
+test("SelectorGuidance suggests a disabled stable attribute only after validation succeeds", () => {
+  const candidate = generateSelectorCandidates(snapshot, "primary").find((item) => item.type === "playwright");
+  assert.ok(candidate);
+
+  const suggestions = suggestSelectorRepairs(snapshot, candidate);
+
+  assert.ok(
+    suggestions.some(
+      (suggestion) =>
+        suggestion.code === "enable-attribute" &&
+        "attributeName" in suggestion.edit &&
+        suggestion.edit.attributeName === "text" &&
+        suggestion.validation.status === "unique"
+    )
+  );
 });
 
 test("text layer attribute can make duplicate elements unique", () => {

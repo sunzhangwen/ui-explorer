@@ -55,3 +55,24 @@ function normalizeRawTargets(rawTargets: unknown): RawBrowserTarget[] {
 export function getDefaultBrowserTargetId(targets: BrowserTarget[]): string | null {
   return targets.find((target) => target.type === "page")?.id ?? targets[0]?.id ?? null;
 }
+
+export type BrowserTargetRecovery = {
+  targetId: string | null;
+  status: "stable" | "recovered" | "closed";
+};
+
+export function recoverBrowserTarget(
+  previousTarget: BrowserTarget,
+  targets: BrowserTarget[]
+): BrowserTargetRecovery {
+  if (targets.some((target) => target.id === previousTarget.id)) {
+    return { targetId: previousTarget.id, status: "stable" };
+  }
+
+  const replacement = targets.find(
+    (target) => target.type === previousTarget.type && target.url === previousTarget.url
+  );
+  return replacement
+    ? { targetId: replacement.id, status: "recovered" }
+    : { targetId: null, status: "closed" };
+}
