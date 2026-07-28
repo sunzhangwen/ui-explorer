@@ -1,6 +1,3 @@
-import { createHash, randomBytes } from "node:crypto";
-import net from "node:net";
-import tls from "node:tls";
 import { getDefaultBrowserTargetId, recoverBrowserTarget, toBrowserTargets } from "../shared/browserTargets.js";
 import { normalizeDebugEndpoint } from "../shared/domSnapshot.js";
 import type {
@@ -13,16 +10,7 @@ import type {
   HighlightResult
 } from "../shared/ipc.js";
 import { ELEMENT_PICKER_SCRIPT, GET_PICKED_ELEMENT_SCRIPT, HIGHLIGHT_SCRIPT, SNAPSHOT_SCRIPT } from "./browserScripts.js";
-import { encodeClientCloseFrame, encodeClientTextFrame, extractServerTextFrames } from "./webSocketFrames.js";
-
-type CdpResponse<T> = {
-  id: number;
-  result?: T;
-  error?: {
-    code: number;
-    message: string;
-  };
-};
+import { CdpConnection } from "./cdpConnection.js";
 
 type RuntimeEvaluateResult<T> = {
   result: {
@@ -35,185 +23,20 @@ type RuntimeEvaluateResult<T> = {
   };
 };
 
-type PendingRequest = {
-  resolve: (value: unknown) => void;
-  reject: (error: Error) => void;
-};
-
-class CdpTargetClient {
-  private socket: net.Socket | tls.TLSSocket | null = null;
-  private sequence = 0;
-  private pending = new Map<number, PendingRequest>();
-  private frameBuffer: Buffer<ArrayBufferLike> = Buffer.alloc(0);
-  private lifecycleRevision = 0;
-
-  async connect(webSocketDebuggerUrl: string): Promise<void> {
-    this.disconnect();
-    this.frameBuffer = Buffer.alloc(0);
-    const socket = await connectWebSocket(webSocketDebuggerUrl);
-    this.socket = socket;
-    socket.on("data", (chunk) => this.handleData(chunk));
-    socket.on("error", (error) => {
-      if (this.socket === socket) {
-        this.rejectPending(error instanceof Error ? error : new Error(String(error)));
-      }
-    });
-    socket.on("close", () => {
-      if (this.socket === socket) {
-        this.socket = null;
-        this.rejectPending(new Error("CDP websocket closed."));
-      }
-    });
-  }
-
-  disconnect(): void {
-    const socket = this.socket;
-    this.socket = null;
-    if (socket && !socket.destroyed) {
-      socket.write(encodeClientCloseFrame());
-      socket.destroy();
-    }
-    this.rejectPending(new Error("CDP target disconnected."));
-  }
-
-  isConnected(): boolean {
-    return Boolean(this.socket && !this.socket.destroyed);
-  }
-
-  getLifecycleRevision(): number {
-    return this.lifecycleRevision;
-  }
-
-  async send<T>(method: string, params?: Record<string, unknown>): Promise<T> {
-    if (!this.socket || this.socket.destroyed) {
-      throw new Error("No CDP target is connected.");
-    }
-
-    const id = ++this.sequence;
-    const payload = JSON.stringify({ id, method, params });
-
-    return new Promise<T>((resolve, reject) => {
-      this.pending.set(id, {
-        resolve: (value) => resolve(value as T),
-        reject
-      });
-      this.socket?.write(encodeClientTextFrame(payload));
-    });
-  }
-
-  private handleData(chunk: Buffer<ArrayBufferLike>): void {
-    this.frameBuffer = Buffer.concat([this.frameBuffer, chunk]);
-    const extracted = extractServerTextFrames(this.frameBuffer);
-    this.frameBuffer = extracted.remaining;
-
-    for (const raw of extracted.messages) {
-      const message = JSON.parse(raw) as Partial<CdpResponse<unknown>> & { method?: string };
-      if (message.method && isBrowserLifecycleEvent(message.method)) {
-        this.lifecycleRevision += 1;
-      }
-      if (typeof message.id !== "number") {
-        continue;
-      }
-
-      const pending = this.pending.get(message.id);
-      if (!pending) {
-        continue;
-      }
-
-      this.pending.delete(message.id);
-
-      if (message.error) {
-        pending.reject(new Error(message.error.message));
-        continue;
-      }
-
-      pending.resolve(message.result);
-    }
-
-    if (extracted.closed) {
-      this.rejectPending(new Error("CDP websocket closed."));
-    }
-  }
-
-  private rejectPending(error: Error): void {
-    for (const request of this.pending.values()) {
-      request.reject(error);
-    }
-    this.pending.clear();
-  }
-}
-
-async function connectWebSocket(webSocketDebuggerUrl: string): Promise<net.Socket | tls.TLSSocket> {
-  const url = new URL(webSocketDebuggerUrl);
-  const isSecure = url.protocol === "wss:";
-  const port = Number(url.port || (isSecure ? 443 : 80));
-  const key = randomBytes(16).toString("base64");
-  const expectedAccept = createHash("sha1")
-    .update(`${key}258EAFA5-E914-47DA-95CA-C5AB0DC85B11`)
-    .digest("base64");
-
-  const socket = await new Promise<net.Socket | tls.TLSSocket>((resolve, reject) => {
-    const client = isSecure ? tls.connect({ host: url.hostname, port }) : net.connect({ host: url.hostname, port });
-    client.once("connect", () => resolve(client));
-    client.once("error", reject);
-  });
-
-  const path = `${url.pathname}${url.search}`;
-  const host = url.port ? `${url.hostname}:${url.port}` : url.hostname;
-  socket.write(
-    [
-      `GET ${path} HTTP/1.1`,
-      `Host: ${host}`,
-      "Upgrade: websocket",
-      "Connection: Upgrade",
-      `Sec-WebSocket-Key: ${key}`,
-      "Sec-WebSocket-Version: 13",
-      "",
-      ""
-    ].join("\r\n")
-  );
-
-  const response = await readHandshakeResponse(socket);
-  if (!/^HTTP\/1\.1 101\b/.test(response) || !response.toLowerCase().includes(`sec-websocket-accept: ${expectedAccept.toLowerCase()}`)) {
-    socket.destroy();
-    throw new Error("CDP websocket handshake failed.");
-  }
-
-  return socket;
-}
-
-async function readHandshakeResponse(socket: net.Socket | tls.TLSSocket): Promise<string> {
-  return new Promise((resolve, reject) => {
-    let buffer = Buffer.alloc(0);
-    const onData = (chunk: Buffer) => {
-      buffer = Buffer.concat([buffer, chunk]);
-      const headerEnd = buffer.indexOf("\r\n\r\n");
-      if (headerEnd === -1) {
-        return;
-      }
-
-      socket.off("data", onData);
-      socket.off("error", onError);
-      resolve(buffer.subarray(0, headerEnd).toString("utf8"));
-    };
-    const onError = (error: Error) => {
-      socket.off("data", onData);
-      reject(error);
-    };
-
-    socket.on("data", onData);
-    socket.once("error", onError);
-  });
-}
-
 export class BrowserSession {
   private endpoint: string | null = null;
   private targets: BrowserTarget[] = [];
   private diagnostics: BrowserConnectionDiagnostics | null = null;
   private selectedTargetId: string | null = null;
   private selectedTarget: BrowserTarget | null = null;
+  private lifecycleRevision = 0;
   private observedLifecycleRevision = 0;
-  private targetClient = new CdpTargetClient();
+  private targetClient = new CdpConnection();
+  private lifecycleSubscription = this.targetClient.onEvent((event) => {
+    if (isBrowserLifecycleEvent(event.method)) {
+      this.lifecycleRevision += 1;
+    }
+  });
 
   async connect(rawEndpoint: string): Promise<BrowserConnectionInfo> {
     this.endpoint = normalizeDebugEndpoint(rawEndpoint);
@@ -269,7 +92,7 @@ export class BrowserSession {
 
     const currentTarget = this.targets.find((target) => target.id === recovery.targetId);
     const targetNavigated = Boolean(currentTarget && currentTarget.url !== this.selectedTarget.url);
-    const lifecycleChanged = this.targetClient.getLifecycleRevision() !== this.observedLifecycleRevision;
+    const lifecycleChanged = this.lifecycleRevision !== this.observedLifecycleRevision;
     const needsReconnect = recovery.status === "recovered" || !this.targetClient.isConnected();
     if (needsReconnect) {
       await this.connectTarget(recovery.targetId);
@@ -278,7 +101,7 @@ export class BrowserSession {
 
     this.selectedTargetId = recovery.targetId;
     this.selectedTarget = currentTarget ?? this.selectedTarget;
-    this.observedLifecycleRevision = this.targetClient.getLifecycleRevision();
+    this.observedLifecycleRevision = this.lifecycleRevision;
     return this.getConnectionInfo(targetNavigated || lifecycleChanged ? "navigated" : "connected");
   }
 
@@ -352,7 +175,7 @@ export class BrowserSession {
     }
     this.selectedTargetId = target.id;
     this.selectedTarget = target;
-    this.observedLifecycleRevision = this.targetClient.getLifecycleRevision();
+    this.observedLifecycleRevision = this.lifecycleRevision;
   }
 
   private async evaluate<T>(expression: string): Promise<T> {

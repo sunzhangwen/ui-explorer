@@ -10,6 +10,8 @@
     "src/main/browserScripts.test.ts",
     "src/main/browserDiscovery.ts",
     "src/main/browserDiscovery.test.ts",
+    "src/main/cdpConnection.ts",
+    "src/main/cdpConnection.test.ts",
     "src/main/browserSession.ts",
     "src/main/browserSession.test.ts",
     "src/main/webSocketFrames.ts",
