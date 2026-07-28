@@ -234,7 +234,7 @@ test("BrowserSession marks frame owners and stitches active OOPIF session snapsh
   assert.ok(connection.sent.some((command) =>
     command.method === "DOM.getFrameOwner" &&
     command.sessionId === "root-session" &&
-    command.params?.frameId === "child-frame"
+    command.params?.frameId === "child-target"
   ));
   assert.deepEqual(
     connection.sent

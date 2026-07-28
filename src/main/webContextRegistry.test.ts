@@ -80,6 +80,87 @@ test("WebContextRegistry associates frame navigation and default execution conte
   });
 });
 
+test("WebContextRegistry preserves TargetInfo parentFrameId when OOPIF navigation omits parentId", () => {
+  const registry = new WebContextRegistry();
+  registry.accept({
+    method: "Target.attachedToTarget",
+    params: {
+      sessionId: "child-session",
+      targetInfo: {
+        targetId: "child-target",
+        type: "iframe",
+        title: "",
+        url: "https://child.test",
+        attached: true,
+        parentFrameId: "root-frame",
+        canAccessOpener: false
+      },
+      waitingForDebugger: false
+    }
+  });
+
+  registry.accept({
+    method: "Page.frameNavigated",
+    sessionId: "child-session",
+    params: {
+      frame: {
+        id: "child-frame",
+        loaderId: "loader-a",
+        url: "https://child.test",
+        securityOrigin: "https://child.test",
+        mimeType: "text/html"
+      },
+      type: "Navigation"
+    }
+  });
+
+  assert.equal(
+    registry.getBySessionId("child-session")?.parentFrameId,
+    "root-frame"
+  );
+});
+
+test("WebContextRegistry does not replace an OOPIF parent with its target-local frame parent", () => {
+  const registry = new WebContextRegistry();
+  registry.accept({
+    method: "Target.attachedToTarget",
+    params: {
+      sessionId: "child-session",
+      targetInfo: {
+        targetId: "child-target",
+        type: "iframe",
+        title: "",
+        url: "https://child.test",
+        attached: true,
+        parentFrameId: "root-frame",
+        canAccessOpener: false
+      },
+      waitingForDebugger: false
+    }
+  });
+
+  registry.accept({
+    method: "Page.frameNavigated",
+    sessionId: "child-session",
+    params: {
+      frame: {
+        id: "child-local-frame",
+        parentId: "child-target",
+        loaderId: "loader-b",
+        url: "https://child.test?revision=2",
+        securityOrigin: "https://child.test",
+        mimeType: "text/html"
+      },
+      type: "Navigation"
+    }
+  });
+
+  assert.equal(
+    registry.getBySessionId("child-session")?.parentFrameId,
+    "root-frame"
+  );
+});
+
 test("WebContextRegistry invalidates the previous execution context on navigation", () => {
   const registry = activeChildRegistry();
 

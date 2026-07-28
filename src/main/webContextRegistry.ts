@@ -149,6 +149,9 @@ export class WebContextRegistry {
       targetId,
       targetType: readString(targetInfo, "type") ?? "other",
       sessionId,
+      ...(readString(targetInfo, "parentFrameId")
+        ? { parentFrameId: readString(targetInfo, "parentFrameId") }
+        : {}),
       revision: 0
     });
   }
@@ -195,7 +198,7 @@ export class WebContextRegistry {
       ...identityOf(context),
       state: "navigating",
       frameId,
-      parentFrameId: readString(frame, "parentId"),
+      parentFrameId: context.parentFrameId ?? readString(frame, "parentId"),
       loaderId: readString(frame, "loaderId"),
       revision: context.revision + 1
     }));

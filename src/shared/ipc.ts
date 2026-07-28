@@ -187,6 +187,12 @@ export const TEST_PAGES: TestPage[] = [
     path: "/test-pages/iframe.html"
   },
   {
+    id: "oopif",
+    titleKey: "testPages.oopif.title",
+    descriptionKey: "testPages.oopif.description",
+    path: "/test-pages/oopif.html"
+  },
+  {
     id: "shadow-dom",
     titleKey: "testPages.shadowDom.title",
     descriptionKey: "testPages.shadowDom.description",

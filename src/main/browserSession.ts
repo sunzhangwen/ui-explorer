@@ -404,7 +404,11 @@ export class BrowserSession {
               nodeId?: number;
             }>(
               "DOM.getFrameOwner",
-              { frameId: context.frameId },
+              {
+                frameId: context.targetType === "iframe"
+                  ? context.targetId
+                  : context.frameId
+              },
               parent.sessionId
             );
             const resolved = await this.targetClient.send<{

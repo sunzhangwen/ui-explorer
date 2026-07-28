@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>UI Explorer OOPIF Child Fixture</title>
+    <link rel="stylesheet" href="/test-pages/styles.css" />
+    <style>
+      body {
+        margin: 0;
+        background: #f4fbf9;
+      }
+
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+      }
+
+      iframe {
+        width: min(560px, 100%);
+        height: 120px;
+        margin-top: 18px;
+        border: 2px dashed #769b94;
+        border-radius: 8px;
+        background: #fff;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h2>Cross-site child document</h2>
+      <p data-testid="navigation-state">Navigation revision: pending</p>
+      <div class="actions">
+        <button type="button" data-testid="oopif-action">Pay now</button>
+        <button type="button" class="duplicate-action">Duplicate action</button>
+        <button type="button" class="duplicate-action">Duplicate action</button>
+        <button type="button" id="navigate-child">Navigate child</button>
+        <button type="button" id="remove-child-frame">Remove nested frame</button>
+      </div>
+      <iframe
+        id="nested-frame"
+        title="Nested frame inside OOPIF"
+        srcdoc='<!doctype html><html><body><button data-testid="nested-oopif-action">Nested action</button></body></html>'
+      ></iframe>
+    </main>
+    <script>
+      const revision = new URL(location.href).searchParams.get("revision") || "initial";
+      document.querySelector("[data-testid='navigation-state']").textContent =
+        `Navigation revision: ${revision}`;
+      document.querySelector("#navigate-child").addEventListener("click", () => {
+        const nextRevision = String(Number(revision === "initial" ? 0 : revision) + 1);
+        location.search = new URLSearchParams({ revision: nextRevision }).toString();
+      });
+      document.querySelector("#remove-child-frame").addEventListener("click", () => {
+        document.querySelector("#nested-frame")?.remove();
+      });
+    </script>
+  </body>
+</html>

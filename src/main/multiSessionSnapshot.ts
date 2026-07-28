@@ -45,58 +45,52 @@ export function stitchSessionSnapshots(
         : null
     ])
   );
-  const pending = snapshots.filter((snapshot) => snapshot.sessionId !== rootSessionId);
+  const pending = snapshots
+    .filter((snapshot) => snapshot.sessionId !== rootSessionId)
+    .sort((left, right) =>
+      getSnapshotDepth(right, snapshots) - getSnapshotDepth(left, snapshots)
+    );
   const attached = new Set<string>();
 
-  for (let pass = 0; pass < pending.length + 1; pass += 1) {
-    let changed = false;
-    for (const childSnapshot of pending) {
-      if (attached.has(childSnapshot.sessionId)) {
-        continue;
-      }
-      const childRoot = roots.get(childSnapshot.sessionId);
-      const parentSnapshot = findParentSnapshot(childSnapshot, snapshots, roots, rootSessionId);
-      if (!childRoot || !parentSnapshot?.root || !childSnapshot.frameId) {
-        continue;
-      }
-      const marker = findFrameMarker(parentSnapshot.root, childSnapshot.frameId);
-      if (!marker) {
-        continue;
-      }
-      const host = findElementSnapshot(parentSnapshot.root, marker.hostNodeId);
-      if (!host) {
-        continue;
-      }
+  for (const childSnapshot of pending) {
+    const childRoot = roots.get(childSnapshot.sessionId);
+    const parentSnapshot = findParentSnapshot(childSnapshot, snapshots, roots, rootSessionId);
+    if (!childRoot || !parentSnapshot?.root || !childSnapshot.frameId) {
+      continue;
+    }
+    const marker = findFrameMarker(parentSnapshot.root, childSnapshot.frameId);
+    if (!marker) {
+      continue;
+    }
+    const host = findElementSnapshot(parentSnapshot.root, marker.hostNodeId);
+    if (!host) {
+      continue;
+    }
 
-      const boundary: ContextBoundary = {
-        ...marker,
-        hostAttributes: { ...marker.hostAttributes },
-        sessionId: childSnapshot.sessionId,
-        targetId: childSnapshot.targetId,
-        frameId: childSnapshot.frameId
-      };
-      const offsets = boundary.ownerContentOffset ? [boundary.ownerContentOffset] : [];
-      const contextualChild = attachContextBoundary(
-        translateSnapshotNode(childRoot, offsets),
-        boundary,
-        host.id,
-        host.depth + 1,
-        true
-      );
-      host.children = host.children.filter((node) =>
-        !(
-          node.diagnostic?.code === "cross-origin-frame" &&
-          node.context?.at(-1)?.frameId === childSnapshot.frameId
-        )
-      );
-      host.children.push(contextualChild);
-      host.childIds = host.children.map((node) => node.id);
-      attached.add(childSnapshot.sessionId);
-      changed = true;
-    }
-    if (!changed) {
-      break;
-    }
+    const boundary: ContextBoundary = {
+      ...marker,
+      hostAttributes: { ...marker.hostAttributes },
+      sessionId: childSnapshot.sessionId,
+      targetId: childSnapshot.targetId,
+      frameId: childSnapshot.frameId
+    };
+    const offsets = boundary.ownerContentOffset ? [boundary.ownerContentOffset] : [];
+    const contextualChild = attachContextBoundary(
+      translateSnapshotNode(childRoot, offsets),
+      boundary,
+      host.id,
+      host.depth + 1,
+      true
+    );
+    host.children = host.children.filter((node) =>
+      !(
+        node.diagnostic?.code === "cross-origin-frame" &&
+        node.context?.at(-1)?.frameId === childSnapshot.frameId
+      )
+    );
+    host.children.push(contextualChild);
+    host.childIds = host.children.map((node) => node.id);
+    attached.add(childSnapshot.sessionId);
   }
 
   const root = roots.get(rootSessionId);
@@ -210,6 +204,22 @@ function findParentSnapshot(
   const parent = exact ?? snapshots.find((candidate) => candidate.sessionId === rootSessionId);
   const root = parent ? roots.get(parent.sessionId) : null;
   return parent && root ? { snapshot: parent, root } : null;
+}
+
+function getSnapshotDepth(
+  snapshot: SessionSnapshot,
+  snapshots: SessionSnapshot[],
+  visited = new Set<string>()
+): number {
+  if (!snapshot.parentFrameId || visited.has(snapshot.sessionId)) {
+    return 0;
+  }
+  visited.add(snapshot.sessionId);
+  const parent = snapshots.find((candidate) =>
+    candidate.frameId === snapshot.parentFrameId &&
+    candidate.sessionId !== snapshot.sessionId
+  );
+  return parent ? getSnapshotDepth(parent, snapshots, visited) + 1 : 1;
 }
 
 function findFrameMarker(

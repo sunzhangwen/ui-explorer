@@ -152,6 +152,8 @@ export type MessageKey =
   | "testPages.basicDom.description"
   | "testPages.iframe.title"
   | "testPages.iframe.description"
+  | "testPages.oopif.title"
+  | "testPages.oopif.description"
   | "testPages.shadowDom.title"
   | "testPages.shadowDom.description"
   | "testPages.dynamicList.title"
@@ -316,6 +318,8 @@ export const messages: Record<"zh-CN" | "en-US", Record<MessageKey, string>> = {
     "testPages.basicDom.description": "按钮、输入框、链接、动态 class 和语义属性。",
     "testPages.iframe.title": "iframe",
     "testPages.iframe.description": "同源嵌套 iframe 和各层 frame 内部可选元素。",
+    "testPages.oopif.title": "跨域 iframe / OOPIF",
+    "testPages.oopif.description": "跨站子 Frame、嵌套 Frame、导航失效和多匹配样例。",
     "testPages.shadowDom.title": "Shadow DOM",
     "testPages.shadowDom.description": "open、嵌套 open 和 closed Shadow 场景。",
     "testPages.dynamicList.title": "动态列表",
@@ -479,6 +483,8 @@ export const messages: Record<"zh-CN" | "en-US", Record<MessageKey, string>> = {
     "testPages.basicDom.description": "Buttons, inputs, links, dynamic classes, and semantic attributes.",
     "testPages.iframe.title": "iframe",
     "testPages.iframe.description": "Nested same-origin iframes with selectable content at each depth.",
+    "testPages.oopif.title": "Cross-origin iframe / OOPIF",
+    "testPages.oopif.description": "Cross-site child frames, nested frames, navigation invalidation, and multiple matches.",
     "testPages.shadowDom.title": "Shadow DOM",
     "testPages.shadowDom.description": "Open, nested open, and closed Shadow scenarios.",
     "testPages.dynamicList.title": "Dynamic list",
