@@ -155,6 +155,7 @@ test("WebContextRegistry records deterministic unavailable diagnostics", () => {
     code: "frame-attach-failed",
     detail: "Target initialization failed."
   });
+  assert.deepEqual(registry.getUnavailableContexts(), [unavailable]);
 });
 
 function attachedChildRegistry(): WebContextRegistry {

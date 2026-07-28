@@ -128,6 +128,26 @@ test("diagnostic presentation exposes each localized key and captured detail", (
       code: "detached-context",
       messageKey: "diagnostic.detachedContext",
       detail: "host: confirm-dialog"
+    },
+    {
+      code: "frame-attach-failed",
+      messageKey: "diagnostic.frameAttachFailed",
+      detail: "target: child-frame"
+    },
+    {
+      code: "frame-owner-unresolved",
+      messageKey: "diagnostic.frameOwnerUnresolved",
+      detail: "frame: child-frame"
+    },
+    {
+      code: "navigation-invalidated",
+      messageKey: "diagnostic.navigationInvalidated",
+      detail: "loader changed"
+    },
+    {
+      code: "session-detached",
+      messageKey: "diagnostic.sessionDetached",
+      detail: "session: child"
     }
   ];
 

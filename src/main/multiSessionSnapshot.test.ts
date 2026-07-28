@@ -4,6 +4,7 @@ import { findElementSnapshot, flattenElementSnapshot } from "../shared/domSnapsh
 import type { DomSnapshotResult, ElementSnapshot } from "../shared/ipc.js";
 import { generateSelectorCandidates } from "../shared/selector.js";
 import {
+  appendUnavailableContextDiagnostics,
   stitchSessionSnapshots,
   translateBoundingBox,
   type SessionSnapshot
@@ -70,6 +71,25 @@ test("selectors validate against elements inside the stitched OOPIF tree", () =>
   assert.ok(candidates.length > 0);
   assert.deepEqual(candidates[0].validation.matchedElementIds, ["child-session::n-2"]);
   assert.equal(candidates[0].validation.status, "unique");
+});
+
+test("appendUnavailableContextDiagnostics exposes attach and detach limitations in the tree", () => {
+  const result = stitchSessionSnapshots("root-session", [parentSessionSnapshot(false)]);
+
+  appendUnavailableContextDiagnostics(result, [{
+    sessionId: "child-session",
+    frameId: "child-frame",
+    diagnostic: {
+      code: "frame-attach-failed",
+      detail: "Target initialization failed."
+    }
+  }]);
+
+  const diagnostic = flattenElementSnapshot(result.root).find((node) =>
+    node.diagnostic?.code === "frame-attach-failed"
+  );
+  assert.equal(diagnostic?.kind, "diagnostic");
+  assert.equal(diagnostic?.diagnostic?.detail, "Target initialization failed.");
 });
 
 function parentSessionSnapshot(withFrameMarker: boolean): SessionSnapshot {

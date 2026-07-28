@@ -13,6 +13,7 @@ import { ELEMENT_PICKER_SCRIPT, GET_PICKED_ELEMENT_SCRIPT, HIGHLIGHT_SCRIPT, SNA
 import { CdpConnection, type CdpEvent } from "./cdpConnection.js";
 import { readBrowserVersion } from "./browserDiscovery.js";
 import {
+  appendUnavailableContextDiagnostics,
   stitchSessionSnapshots,
   type SessionSnapshot
 } from "./multiSessionSnapshot.js";
@@ -183,11 +184,15 @@ export class BrowserSession {
     }
 
     await this.markFrameOwners(contexts);
+    const captureContexts = contexts.filter((context) => {
+      const current = this.contextRegistry.getBySessionId(context.sessionId);
+      return current?.state === "active" && current.revision === context.revision;
+    });
     const revisions = new Map(
-      contexts.map((context) => [context.sessionId, context.revision])
+      captureContexts.map((context) => [context.sessionId, context.revision])
     );
     const snapshots = await Promise.all(
-      contexts.map(async (context): Promise<SessionSnapshot> => ({
+      captureContexts.map(async (context): Promise<SessionSnapshot> => ({
         sessionId: context.sessionId,
         targetId: context.targetId,
         frameId: context.frameId,
@@ -207,6 +212,14 @@ export class BrowserSession {
       }
     }
     const stitched = stitchSessionSnapshots(rootContext.sessionId, snapshots);
+    appendUnavailableContextDiagnostics(
+      stitched,
+      this.contextRegistry.getUnavailableContexts().map((context) => ({
+        sessionId: context.sessionId,
+        frameId: context.frameId,
+        diagnostic: context.diagnostic
+      }))
+    );
     this.lastSnapshotRouting = {
       snapshotToken: stitched.snapshotToken ?? null,
       sessions: new Map(
@@ -616,7 +629,9 @@ function readString(value: Record<string, unknown>, key: string): string | undef
 export function isBrowserLifecycleEvent(method: string): boolean {
   return (
     method === "Page.frameNavigated" ||
+    method === "Page.frameDetached" ||
     method === "Runtime.executionContextsCleared" ||
+    method === "Target.detachedFromTarget" ||
     method === "Inspector.detached"
   );
 }

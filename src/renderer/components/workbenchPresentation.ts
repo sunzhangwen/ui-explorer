@@ -26,7 +26,11 @@ const SELECTOR_LAYER_MESSAGE_KEYS = {
 const DIAGNOSTIC_MESSAGE_KEYS = {
   "cross-origin-frame": "diagnostic.crossOriginFrame",
   "closed-shadow-root": "diagnostic.closedShadowRoot",
-  "detached-context": "diagnostic.detachedContext"
+  "detached-context": "diagnostic.detachedContext",
+  "frame-attach-failed": "diagnostic.frameAttachFailed",
+  "frame-owner-unresolved": "diagnostic.frameOwnerUnresolved",
+  "navigation-invalidated": "diagnostic.navigationInvalidated",
+  "session-detached": "diagnostic.sessionDetached"
 } as const satisfies Record<SnapshotDiagnostic["code"], MessageKey>;
 
 export function getSelectorLayerMessageKey(kind: SelectorLayer["kind"]): MessageKey {

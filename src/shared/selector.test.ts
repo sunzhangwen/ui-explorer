@@ -1508,6 +1508,48 @@ test("JSON export includes ordered context chains and layer diagnostics", () => 
   assert.deepEqual(output.diagnostics.layers, []);
 });
 
+test("OOPIF JSON export keeps stable frame routing metadata out of executable code", () => {
+  const root = createDirectFrameSnapshot("Payment");
+  const frameRoot = root.children[0]?.children[0]?.children[0];
+  const target = frameRoot?.children[0];
+  assert.ok(frameRoot);
+  assert.ok(target);
+  const boundary = {
+    kind: "frame" as const,
+    hostNodeId: "direct-frame",
+    hostTagName: "iframe",
+    hostAttributes: { title: "Payment" },
+    frameId: "frame-child",
+    targetId: "target-child",
+    sessionId: "temporary-session"
+  };
+  frameRoot.context = [boundary];
+  target.context = [boundary];
+  const candidate = generateSelectorCandidates(root, "direct-frame-target").find(
+    (item) => item.type === "css"
+  );
+  assert.ok(candidate);
+
+  const exports = buildSelectorExports(candidate);
+  const json = JSON.parse(exports.json) as {
+    context: {
+      frameRouting: Array<{
+        selector: string;
+        frameId?: string;
+        targetId?: string;
+      }>;
+    };
+  };
+
+  assert.deepEqual(json.context.frameRouting, [{
+    selector: 'iframe[title="Payment"]',
+    frameId: "frame-child",
+    targetId: "target-child"
+  }]);
+  assert.doesNotMatch(exports.playwright, /temporary-session/);
+  assert.doesNotMatch(exports.selenium, /temporary-session/);
+});
+
 test("inaccessible context diagnostics emit comments instead of runnable exports", () => {
   const candidate = generateSelectorCandidates(contextSnapshot, "shadow-input").find(
     (item) => item.type === "css"

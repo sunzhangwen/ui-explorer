@@ -93,6 +93,8 @@ test("BrowserLifecycleEvent recognizes navigation refresh and detach events", ()
   assert.equal(isBrowserLifecycleEvent("Page.frameNavigated"), true);
   assert.equal(isBrowserLifecycleEvent("Runtime.executionContextsCleared"), true);
   assert.equal(isBrowserLifecycleEvent("Inspector.detached"), true);
+  assert.equal(isBrowserLifecycleEvent("Page.frameDetached"), true);
+  assert.equal(isBrowserLifecycleEvent("Target.detachedFromTarget"), true);
   assert.equal(isBrowserLifecycleEvent("Runtime.consoleAPICalled"), false);
 });
 

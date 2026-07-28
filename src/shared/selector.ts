@@ -33,6 +33,7 @@ export type SelectorLayer = {
   enabled: boolean;
   tagEnabled: boolean;
   attributes: SelectorAttribute[];
+  boundary?: ContextBoundary;
   diagnostic?: SnapshotDiagnostic;
 };
 
@@ -321,6 +322,13 @@ export function buildSelectorExports(candidate: SelectorCandidate): SelectorExpo
     frameChain: candidate.layers
       .filter((layer) => layer.enabled && layer.kind === "frame")
       .map(serializeBoundaryHost),
+    frameRouting: candidate.layers
+      .filter((layer) => layer.enabled && layer.kind === "frame")
+      .map((layer) => ({
+        selector: serializeBoundaryHost(layer),
+        ...(layer.boundary?.frameId ? { frameId: layer.boundary.frameId } : {}),
+        ...(layer.boundary?.targetId ? { targetId: layer.boundary.targetId } : {})
+      })),
     shadowChain: candidate.layers
       .filter((layer) => layer.enabled && layer.kind === "shadow")
       .map(serializeBoundaryHost)
@@ -559,7 +567,15 @@ function numberedVariable(base: string, count: number): string {
 }
 
 function isInaccessibleContextCode(code: string): boolean {
-  return code === "cross-origin-frame" || code === "closed-shadow-root" || code === "detached-context";
+  return [
+    "cross-origin-frame",
+    "closed-shadow-root",
+    "detached-context",
+    "frame-attach-failed",
+    "frame-owner-unresolved",
+    "navigation-invalidated",
+    "session-detached"
+  ].includes(code);
 }
 
 function formatUnavailableExport(
@@ -631,6 +647,15 @@ function buildTargetLayers(root: ElementSnapshot, target: ElementSnapshot): Sele
     const layer = createSelectorLayer(host, kind, `${kind}-${boundaryCounts[kind]}`, true, true);
     const boundaryLayer = {
       ...layer,
+      boundary: boundary
+        ? {
+            ...boundary,
+            hostAttributes: { ...boundary.hostAttributes },
+            ownerContentOffset: boundary.ownerContentOffset
+              ? { ...boundary.ownerContentOffset }
+              : undefined
+          }
+        : undefined,
       attributes: layer.attributes.filter(isExportableBoundaryAttribute)
     };
     layers.push(

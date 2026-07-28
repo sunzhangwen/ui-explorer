@@ -40,7 +40,14 @@ export type BoundingBox = {
 
 export type ElementNodeKind = "element" | "page" | "frame" | "shadow" | "diagnostic";
 export type ContextBoundaryKind = "frame" | "shadow";
-export type SnapshotDiagnosticCode = "cross-origin-frame" | "closed-shadow-root" | "detached-context";
+export type SnapshotDiagnosticCode =
+  | "cross-origin-frame"
+  | "closed-shadow-root"
+  | "detached-context"
+  | "frame-attach-failed"
+  | "frame-owner-unresolved"
+  | "navigation-invalidated"
+  | "session-detached";
 
 export type ContextBoundary = {
   kind: ContextBoundaryKind;

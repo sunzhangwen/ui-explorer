@@ -139,6 +139,10 @@ export type MessageKey =
   | "diagnostic.crossOriginFrame"
   | "diagnostic.closedShadowRoot"
   | "diagnostic.detachedContext"
+  | "diagnostic.frameAttachFailed"
+  | "diagnostic.frameOwnerUnresolved"
+  | "diagnostic.navigationInvalidated"
+  | "diagnostic.sessionDetached"
   | "diagnostics.ipc"
   | "diagnostics.app"
   | "diagnostics.nodes"
@@ -298,6 +302,10 @@ export const messages: Record<"zh-CN" | "en-US", Record<MessageKey, string>> = {
     "diagnostic.crossOriginFrame": "跨域 Frame 内容不可访问",
     "diagnostic.closedShadowRoot": "Closed Shadow Root 内容不可访问",
     "diagnostic.detachedContext": "上下文已分离，无法访问",
+    "diagnostic.frameAttachFailed": "无法附加跨域 Frame 调试 Session",
+    "diagnostic.frameOwnerUnresolved": "无法定位跨域 Frame 的宿主元素",
+    "diagnostic.navigationInvalidated": "页面导航已使捕获上下文失效",
+    "diagnostic.sessionDetached": "跨域 Frame 调试 Session 已脱离",
     "app.description": "连接并检查网页 UI，生成 Selector 与结构化数据",
     "diagnostics.ipc": "主进程往返",
     "diagnostics.app": "运行环境",
@@ -457,6 +465,10 @@ export const messages: Record<"zh-CN" | "en-US", Record<MessageKey, string>> = {
     "diagnostic.crossOriginFrame": "Cross-origin frame content is unavailable",
     "diagnostic.closedShadowRoot": "Closed Shadow Root content is unavailable",
     "diagnostic.detachedContext": "The browsing context is detached and unavailable",
+    "diagnostic.frameAttachFailed": "Unable to attach the cross-origin frame debugging session",
+    "diagnostic.frameOwnerUnresolved": "Unable to resolve the cross-origin frame owner element",
+    "diagnostic.navigationInvalidated": "Page navigation invalidated the captured context",
+    "diagnostic.sessionDetached": "The cross-origin frame debugging session detached",
     "app.description": "Inspect web UI, generate selectors, and extract structured data",
     "diagnostics.ipc": "Main process round trip",
     "diagnostics.app": "Runtime",

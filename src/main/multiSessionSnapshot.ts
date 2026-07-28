@@ -19,6 +19,15 @@ export type SessionSnapshot = {
   result: DomSnapshotResult;
 };
 
+export type UnavailableContextDiagnostic = {
+  sessionId: string;
+  frameId?: string;
+  diagnostic: {
+    code: SnapshotDiagnosticCode;
+    detail: string;
+  };
+};
+
 export function stitchSessionSnapshots(
   rootSessionId: string,
   snapshots: SessionSnapshot[]
@@ -156,6 +165,39 @@ export function translateBoundingBox(
   );
 }
 
+export function appendUnavailableContextDiagnostics(
+  result: DomSnapshotResult,
+  contexts: UnavailableContextDiagnostic[]
+): void {
+  if (!result.root) {
+    return;
+  }
+  for (const context of contexts) {
+    const messageKey = diagnosticMessageKey(context.diagnostic.code);
+    const id = `${result.root.id}::${context.diagnostic.code}::${context.frameId ?? context.sessionId}`;
+    result.root.children.push({
+      id,
+      parentId: result.root.id,
+      depth: result.root.depth + 1,
+      nodeType: 8,
+      nodeName: "#context-unavailable",
+      text: context.diagnostic.detail,
+      kind: "diagnostic",
+      context: [],
+      diagnostic: {
+        code: context.diagnostic.code,
+        messageKey,
+        detail: context.diagnostic.detail
+      },
+      attributes: {},
+      childIds: [],
+      children: []
+    });
+  }
+  recalculateTree(result.root, undefined, 0);
+  result.nodeCount = flattenElementSnapshot(result.root).length;
+}
+
 function findParentSnapshot(
   child: SessionSnapshot,
   snapshots: SessionSnapshot[],
@@ -245,7 +287,7 @@ function appendOwnerDiagnostic(
     kind: "diagnostic",
     context: [],
     diagnostic: {
-      code: "frame-owner-unresolved" as SnapshotDiagnosticCode,
+      code: "frame-owner-unresolved",
       messageKey: "snapshot.diagnostic.frameOwnerUnresolved",
       detail: `Unable to resolve owner for frame ${child.frameId ?? child.sessionId}.`
     },
@@ -272,4 +314,27 @@ function recalculateTree(
 
 function namespaceElementId(sessionId: string, localId: string): string {
   return localId.startsWith(`${sessionId}::`) ? localId : `${sessionId}::${localId}`;
+}
+
+function diagnosticMessageKey(code: SnapshotDiagnosticCode): string {
+  switch (code) {
+    case "cross-origin-frame":
+      return "diagnostic.crossOriginFrame";
+    case "closed-shadow-root":
+      return "diagnostic.closedShadowRoot";
+    case "detached-context":
+      return "diagnostic.detachedContext";
+    case "frame-attach-failed":
+      return "diagnostic.frameAttachFailed";
+    case "frame-owner-unresolved":
+      return "diagnostic.frameOwnerUnresolved";
+    case "navigation-invalidated":
+      return "diagnostic.navigationInvalidated";
+    case "session-detached":
+      return "diagnostic.sessionDetached";
+    default: {
+      const exhaustive: never = code;
+      throw new Error(`Unhandled snapshot diagnostic: ${exhaustive}`);
+    }
+  }
 }

@@ -37,6 +37,11 @@ export type WebContextRecord =
       diagnostic: WebContextDiagnostic;
     });
 
+export type UnavailableWebContext = Extract<
+  WebContextRecord,
+  { state: "detached" | "unavailable" }
+>;
+
 export type RegisterRootInput = {
   targetId: string;
   sessionId: string;
@@ -99,6 +104,13 @@ export class WebContextRegistry {
   getActiveContexts(): ActiveWebContext[] {
     return Array.from(this.contextsBySession.values()).filter(
       (context): context is ActiveWebContext => context.state === "active"
+    );
+  }
+
+  getUnavailableContexts(): UnavailableWebContext[] {
+    return Array.from(this.contextsBySession.values()).filter(
+      (context): context is UnavailableWebContext =>
+        context.state === "detached" || context.state === "unavailable"
     );
   }
 
