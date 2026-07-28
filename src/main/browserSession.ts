@@ -66,6 +66,11 @@ export class BrowserSession {
   private browserVersionReader: BrowserVersionReader;
   private contextRegistry = new WebContextRegistry();
   private eventQueue = Promise.resolve();
+  private pickerEnabled = false;
+  private lastSnapshotRouting: {
+    snapshotToken: string | null;
+    sessions: Map<string, { snapshotToken: string | null; revision: number }>;
+  } | null = null;
 
   constructor(options: BrowserSessionOptions = {}) {
     this.targetClient = options.connection ?? new CdpConnection();
@@ -73,6 +78,7 @@ export class BrowserSession {
     this.targetClient.onEvent((event) => {
       if (isBrowserLifecycleEvent(event.method)) {
         this.lifecycleRevision += 1;
+        this.lastSnapshotRouting = null;
       }
       this.contextRegistry.accept(event);
       this.eventQueue = this.eventQueue
@@ -105,6 +111,8 @@ export class BrowserSession {
     this.selectedTarget = null;
     this.rootSessionId = null;
     this.contextRegistry.clear();
+    this.pickerEnabled = false;
+    this.lastSnapshotRouting = null;
   }
 
   async listTargets(): Promise<BrowserTarget[]> {
@@ -198,7 +206,20 @@ export class BrowserSession {
         throw new Error(`Snapshot invalidated by navigation or detach: ${sessionId}`);
       }
     }
-    return stitchSessionSnapshots(rootContext.sessionId, snapshots);
+    const stitched = stitchSessionSnapshots(rootContext.sessionId, snapshots);
+    this.lastSnapshotRouting = {
+      snapshotToken: stitched.snapshotToken ?? null,
+      sessions: new Map(
+        snapshots.map((snapshot) => [
+          snapshot.sessionId,
+          {
+            snapshotToken: snapshot.result.snapshotToken ?? null,
+            revision: snapshot.revision
+          }
+        ])
+      )
+    };
+    return stitched;
   }
 
   async highlightElement(request: HighlightElementRequest): Promise<HighlightResult> {
@@ -209,6 +230,9 @@ export class BrowserSession {
   }
 
   async highlightElements(request: HighlightElementsRequest): Promise<HighlightResult> {
+    if (this.lastSnapshotRouting) {
+      return this.highlightNamespacedElements(request);
+    }
     const expression = HIGHLIGHT_SCRIPT
       .replace("__ELEMENT_IDS__", JSON.stringify(request.elementIds))
       .replace("__SNAPSHOT_TOKEN__", JSON.stringify(request.snapshotToken));
@@ -216,11 +240,42 @@ export class BrowserSession {
   }
 
   async setElementPickerEnabled(enabled: boolean): Promise<void> {
-    await this.evaluate(ELEMENT_PICKER_SCRIPT.replace("__ENABLED__", JSON.stringify(enabled)));
+    this.pickerEnabled = enabled;
+    if (!this.rootSessionId) {
+      await this.evaluate(ELEMENT_PICKER_SCRIPT.replace("__ENABLED__", JSON.stringify(enabled)));
+      return;
+    }
+    await this.eventQueue;
+    const expression = ELEMENT_PICKER_SCRIPT.replace(
+      "__ENABLED__",
+      JSON.stringify(enabled)
+    );
+    await Promise.all(
+      this.contextRegistry.getActiveContexts().map((context) =>
+        this.evaluateInSession<void>(expression, context.sessionId)
+      )
+    );
   }
 
   async getPickedElementId(): Promise<string | null> {
-    return this.evaluate<string | null>(GET_PICKED_ELEMENT_SCRIPT);
+    if (!this.rootSessionId) {
+      return this.evaluate<string | null>(GET_PICKED_ELEMENT_SCRIPT);
+    }
+    await this.eventQueue;
+    const contexts = this.contextRegistry.getActiveContexts();
+    const picked = await Promise.all(
+      contexts.map(async (context) => ({
+        sessionId: context.sessionId,
+        localId: await this.evaluateInSession<string | null>(
+          GET_PICKED_ELEMENT_SCRIPT,
+          context.sessionId
+        )
+      }))
+    );
+    const match = picked.find((item) => item.localId);
+    return match?.localId
+      ? `${match.sessionId}::${match.localId}`
+      : null;
   }
 
   private async fetchTargets(): Promise<BrowserTarget[]> {
@@ -435,6 +490,12 @@ export class BrowserSession {
     }
     try {
       await this.initializeSession(childSessionId);
+      if (this.pickerEnabled) {
+        await this.evaluateInSession<void>(
+          ELEMENT_PICKER_SCRIPT.replace("__ENABLED__", "true"),
+          childSessionId
+        );
+      }
     } catch (error) {
       this.contextRegistry.invalidateSession(
         childSessionId,
@@ -442,6 +503,75 @@ export class BrowserSession {
         error instanceof Error ? error.message : String(error)
       );
     }
+  }
+
+  private async highlightNamespacedElements(
+    request: HighlightElementsRequest
+  ): Promise<HighlightResult> {
+    const routing = this.lastSnapshotRouting;
+    if (!routing || routing.snapshotToken !== request.snapshotToken) {
+      return { targets: [] };
+    }
+
+    const groups = new Map<
+      string,
+      Array<{ globalId: string; localId: string }>
+    >();
+    for (const globalId of request.elementIds) {
+      const parsed = parseRuntimeElementId(globalId);
+      if (!parsed || !routing.sessions.has(parsed.sessionId)) {
+        continue;
+      }
+      const group = groups.get(parsed.sessionId) ?? [];
+      group.push({ globalId, localId: parsed.localId });
+      groups.set(parsed.sessionId, group);
+    }
+
+    const mappedTargets = new Map<string, HighlightResult["targets"][number]>();
+    await Promise.all(
+      Array.from(groups, async ([sessionId, elements]) => {
+        const sessionRouting = routing.sessions.get(sessionId);
+        const current = this.contextRegistry.getBySessionId(sessionId);
+        if (
+          !sessionRouting ||
+          !current ||
+          current.state !== "active" ||
+          current.revision !== sessionRouting.revision
+        ) {
+          return;
+        }
+        const expression = HIGHLIGHT_SCRIPT
+          .replace(
+            "__ELEMENT_IDS__",
+            JSON.stringify(elements.map((element) => element.localId))
+          )
+          .replace(
+            "__SNAPSHOT_TOKEN__",
+            JSON.stringify(sessionRouting.snapshotToken)
+          );
+        const result = await this.evaluateInSession<HighlightResult>(
+          expression,
+          sessionId
+        );
+        const globalByLocal = new Map(
+          elements.map((element) => [element.localId, element.globalId])
+        );
+        for (const target of result.targets) {
+          const globalId = globalByLocal.get(target.elementId);
+          if (!globalId) {
+            continue;
+          }
+          mappedTargets.set(globalId, { ...target, elementId: globalId });
+        }
+      })
+    );
+
+    return {
+      targets: request.elementIds.flatMap((elementId) => {
+        const target = mappedTargets.get(elementId);
+        return target ? [target] : [];
+      })
+    };
   }
 
   private getConnectionInfo(status: BrowserConnectionInfo["status"]): BrowserConnectionInfo {
@@ -454,6 +584,19 @@ export class BrowserSession {
       diagnostics: this.diagnostics ?? undefined
     };
   }
+}
+
+export function parseRuntimeElementId(
+  id: string
+): { sessionId: string; localId: string } | null {
+  const boundary = id.indexOf("::");
+  if (boundary <= 0 || boundary === id.length - 2) {
+    return null;
+  }
+  return {
+    sessionId: id.slice(0, boundary),
+    localId: id.slice(boundary + 2)
+  };
 }
 
 function readRecord(

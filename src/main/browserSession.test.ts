@@ -6,7 +6,12 @@ import {
   type BrowserSessionConnection
 } from "./browserSession.js";
 import type { CdpEvent } from "./cdpConnection.js";
-import { SNAPSHOT_SCRIPT } from "./browserScripts.js";
+import {
+  ELEMENT_PICKER_SCRIPT,
+  GET_PICKED_ELEMENT_SCRIPT,
+  HIGHLIGHT_SCRIPT,
+  SNAPSHOT_SCRIPT
+} from "./browserScripts.js";
 import { findElementSnapshot } from "../shared/domSnapshot.js";
 import type { DomSnapshotResult, ElementSnapshot } from "../shared/ipc.js";
 
@@ -238,6 +243,73 @@ test("BrowserSession marks frame owners and stitches active OOPIF session snapsh
   );
 });
 
+test("BrowserSession routes namespaced highlights and picker results to their owning sessions", async () => {
+  const connection = new RecordingConnection(new Map([
+    ["root-session", oopifParentSnapshot()],
+    ["child-session", oopifChildSnapshot()]
+  ]));
+  connection.pickedBySession.set("child-session", "n-2");
+  const session = new BrowserSession({
+    connection,
+    readBrowserVersion: async () => ({
+      browser: "Chrome/140.0.0.0",
+      webSocketDebuggerUrl: "ws://127.0.0.1:9222/devtools/browser/browser-id"
+    })
+  });
+  const testSession = session as unknown as {
+    fetchTargets: () => Promise<Array<{
+      id: string;
+      type: string;
+      title: string;
+      url: string;
+      webSocketDebuggerUrl: string;
+    }>>;
+  };
+  testSession.fetchTargets = async () => [{
+    id: "page-1",
+    type: "page",
+    title: "App",
+    url: "https://app.test",
+    webSocketDebuggerUrl: "ws://page-1"
+  }];
+  await session.connect("http://127.0.0.1:9222");
+  connection.emit(frameNavigatedEvent("root-session", "root-frame", undefined, "root-loader"));
+  connection.emit(executionContextEvent("root-session", "root-frame", 10));
+  connection.emit(attachedIframeEvent());
+  connection.emit(frameNavigatedEvent("child-session", "child-frame", "root-frame", "child-loader"));
+  connection.emit(executionContextEvent("child-session", "child-frame", 20));
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  const snapshot = await session.getDomSnapshot();
+  const commandStart = connection.sent.length;
+
+  const highlighted = await session.highlightElements({
+    elementIds: ["root-session::n-2", "child-session::n-2"],
+    snapshotToken: snapshot.snapshotToken ?? null
+  });
+  await session.setElementPickerEnabled(true);
+  const picked = await session.getPickedElementId();
+
+  assert.deepEqual(highlighted.targets.map((target) => target.elementId), [
+    "root-session::n-2",
+    "child-session::n-2"
+  ]);
+  const actionCommands = connection.sent.slice(commandStart);
+  const highlightCommands = actionCommands.filter((command) =>
+    command.method === "Runtime.evaluate" &&
+    typeof command.params?.expression === "string" &&
+    command.params.expression.includes("const elementIds =")
+  );
+  assert.deepEqual(
+    highlightCommands.map((command) => command.sessionId).sort(),
+    ["child-session", "root-session"]
+  );
+  assert.ok(highlightCommands.every((command) =>
+    !String(command.params?.expression).includes("child-session::n-2") &&
+    !String(command.params?.expression).includes("root-session::n-2")
+  ));
+  assert.equal(picked, "child-session::n-2");
+});
+
 type RecordedCommand = {
   method: string;
   params?: Record<string, unknown>;
@@ -247,6 +319,7 @@ type RecordedCommand = {
 class RecordingConnection implements BrowserSessionConnection {
   readonly connectedUrls: string[] = [];
   readonly sent: RecordedCommand[] = [];
+  readonly pickedBySession = new Map<string, string | null>();
   private listeners = new Set<(event: CdpEvent) => void>();
   private connected = false;
 
@@ -288,6 +361,33 @@ class RecordingConnection implements BrowserSessionConnection {
       return { object: { objectId: "frame-owner-object" } } as T;
     }
     if (method === "Runtime.evaluate") {
+      const expression = String(params?.expression ?? "");
+      if (/const elementIds = \[/.test(expression)) {
+        const match = /const elementIds = (\[[^;]*\]);/.exec(expression);
+        const ids = match ? JSON.parse(match[1]) as string[] : [];
+        return {
+          result: {
+            type: "object",
+            value: {
+              targets: ids.map((elementId) => ({
+                elementId,
+                status: "highlighted"
+              }))
+            }
+          }
+        } as T;
+      }
+      if (expression === ELEMENT_PICKER_SCRIPT.replace("__ENABLED__", "true") ||
+          expression === ELEMENT_PICKER_SCRIPT.replace("__ENABLED__", "false")) {
+        return { result: { type: "boolean", value: true } } as T;
+      }
+      if (expression === GET_PICKED_ELEMENT_SCRIPT) {
+        const picked = sessionId ? this.pickedBySession.get(sessionId) ?? null : null;
+        if (sessionId) {
+          this.pickedBySession.set(sessionId, null);
+        }
+        return { result: { type: "string", value: picked } } as T;
+      }
       const snapshot = sessionId ? this.snapshotsBySession.get(sessionId) : undefined;
       return {
         result: {
