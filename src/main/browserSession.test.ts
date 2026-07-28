@@ -7,6 +7,8 @@ import {
 } from "./browserSession.js";
 import type { CdpEvent } from "./cdpConnection.js";
 import { SNAPSHOT_SCRIPT } from "./browserScripts.js";
+import { findElementSnapshot } from "../shared/domSnapshot.js";
+import type { DomSnapshotResult, ElementSnapshot } from "../shared/ipc.js";
 
 test("a delayed highlight request keeps the token of the snapshot that issued it", async () => {
   const session = new BrowserSession();
@@ -182,6 +184,60 @@ test("BrowserSession recursively enables auto attach on a newly attached iframe 
   ));
 });
 
+test("BrowserSession marks frame owners and stitches active OOPIF session snapshots", async () => {
+  const connection = new RecordingConnection(new Map([
+    ["root-session", oopifParentSnapshot()],
+    ["child-session", oopifChildSnapshot()]
+  ]));
+  const session = new BrowserSession({
+    connection,
+    readBrowserVersion: async () => ({
+      browser: "Chrome/140.0.0.0",
+      webSocketDebuggerUrl: "ws://127.0.0.1:9222/devtools/browser/browser-id"
+    })
+  });
+  const testSession = session as unknown as {
+    fetchTargets: () => Promise<Array<{
+      id: string;
+      type: string;
+      title: string;
+      url: string;
+      webSocketDebuggerUrl: string;
+    }>>;
+  };
+  testSession.fetchTargets = async () => [{
+    id: "page-1",
+    type: "page",
+    title: "App",
+    url: "https://app.test",
+    webSocketDebuggerUrl: "ws://page-1"
+  }];
+  await session.connect("http://127.0.0.1:9222");
+
+  connection.emit(frameNavigatedEvent("root-session", "root-frame", undefined, "root-loader"));
+  connection.emit(executionContextEvent("root-session", "root-frame", 10));
+  connection.emit(attachedIframeEvent());
+  connection.emit(frameNavigatedEvent("child-session", "child-frame", "root-frame", "child-loader"));
+  connection.emit(executionContextEvent("child-session", "child-frame", 20));
+  await new Promise<void>((resolve) => setImmediate(resolve));
+
+  const snapshot = await session.getDomSnapshot();
+
+  assert.ok(findElementSnapshot(snapshot.root, "child-session::n-2"));
+  assert.ok(connection.sent.some((command) =>
+    command.method === "DOM.getFrameOwner" &&
+    command.sessionId === "root-session" &&
+    command.params?.frameId === "child-frame"
+  ));
+  assert.deepEqual(
+    connection.sent
+      .filter((command) => command.method === "Runtime.evaluate")
+      .map((command) => command.sessionId)
+      .sort(),
+    ["child-session", "root-session"]
+  );
+});
+
 type RecordedCommand = {
   method: string;
   params?: Record<string, unknown>;
@@ -193,6 +249,10 @@ class RecordingConnection implements BrowserSessionConnection {
   readonly sent: RecordedCommand[] = [];
   private listeners = new Set<(event: CdpEvent) => void>();
   private connected = false;
+
+  constructor(
+    private readonly snapshotsBySession = new Map<string, DomSnapshotResult>()
+  ) {}
 
   async connect(url: string): Promise<void> {
     this.connectedUrls.push(url);
@@ -221,6 +281,21 @@ class RecordingConnection implements BrowserSessionConnection {
     if (method === "Target.attachToTarget") {
       return { sessionId: "root-session" } as T;
     }
+    if (method === "DOM.getFrameOwner") {
+      return { backendNodeId: 99 } as T;
+    }
+    if (method === "DOM.resolveNode") {
+      return { object: { objectId: "frame-owner-object" } } as T;
+    }
+    if (method === "Runtime.evaluate") {
+      const snapshot = sessionId ? this.snapshotsBySession.get(sessionId) : undefined;
+      return {
+        result: {
+          type: "object",
+          value: snapshot
+        }
+      } as T;
+    }
     return {} as T;
   }
 
@@ -229,4 +304,165 @@ class RecordingConnection implements BrowserSessionConnection {
       listener(event);
     }
   }
+}
+
+function attachedIframeEvent(): CdpEvent {
+  return {
+    method: "Target.attachedToTarget",
+    sessionId: "root-session",
+    params: {
+      sessionId: "child-session",
+      targetInfo: {
+        targetId: "child-target",
+        type: "iframe",
+        title: "",
+        url: "https://child.test",
+        attached: true,
+        canAccessOpener: false
+      },
+      waitingForDebugger: false
+    }
+  };
+}
+
+function frameNavigatedEvent(
+  sessionId: string,
+  frameId: string,
+  parentFrameId: string | undefined,
+  loaderId: string
+): CdpEvent {
+  return {
+    method: "Page.frameNavigated",
+    sessionId,
+    params: {
+      frame: {
+        id: frameId,
+        ...(parentFrameId ? { parentId: parentFrameId } : {}),
+        loaderId,
+        url: "https://app.test",
+        securityOrigin: "https://app.test",
+        mimeType: "text/html"
+      },
+      type: "Navigation"
+    }
+  };
+}
+
+function executionContextEvent(
+  sessionId: string,
+  frameId: string,
+  executionContextId: number
+): CdpEvent {
+  return {
+    method: "Runtime.executionContextCreated",
+    sessionId,
+    params: {
+      context: {
+        id: executionContextId,
+        uniqueId: `${sessionId}-context`,
+        origin: "https://app.test",
+        name: "",
+        auxData: {
+          isDefault: true,
+          type: "default",
+          frameId
+        }
+      }
+    }
+  };
+}
+
+function oopifParentSnapshot(): DomSnapshotResult {
+  const context = [{
+    kind: "frame" as const,
+    hostNodeId: "n-2",
+    hostTagName: "iframe",
+    hostAttributes: { title: "Payment" },
+    frameId: "child-frame",
+    targetId: "child-target",
+    sessionId: "child-session",
+    ownerContentOffset: { x: 100, y: 40 }
+  }];
+  const unavailable: ElementSnapshot = {
+    id: "n-3",
+    parentId: "n-2",
+    depth: 2,
+    nodeType: 8,
+    nodeName: "#context-unavailable",
+    kind: "diagnostic",
+    context,
+    diagnostic: {
+      code: "cross-origin-frame",
+      messageKey: "snapshot.crossOriginFrame",
+      detail: "Frame content is not accessible"
+    },
+    attributes: {},
+    childIds: [],
+    children: []
+  };
+  const frame: ElementSnapshot = {
+    id: "n-2",
+    parentId: "n-1",
+    depth: 1,
+    nodeType: 1,
+    nodeName: "IFRAME",
+    tagName: "iframe",
+    kind: "element",
+    context: [],
+    attributes: { title: "Payment" },
+    childIds: ["n-3"],
+    children: [unavailable]
+  };
+  return {
+    root: {
+      id: "n-1",
+      depth: 0,
+      nodeType: 1,
+      nodeName: "HTML",
+      tagName: "html",
+      kind: "page",
+      context: [],
+      attributes: {},
+      childIds: ["n-2"],
+      children: [frame]
+    },
+    capturedAt: "2026-07-29T00:00:00.000Z",
+    snapshotToken: "root-token",
+    nodeCount: 3
+  };
+}
+
+function oopifChildSnapshot(): DomSnapshotResult {
+  const button: ElementSnapshot = {
+    id: "n-2",
+    parentId: "n-1",
+    depth: 1,
+    nodeType: 1,
+    nodeName: "BUTTON",
+    tagName: "button",
+    text: "Pay",
+    kind: "element",
+    context: [],
+    visible: true,
+    attributes: { "data-testid": "oopif-action" },
+    childIds: [],
+    children: []
+  };
+  return {
+    root: {
+      id: "n-1",
+      depth: 0,
+      nodeType: 1,
+      nodeName: "HTML",
+      tagName: "html",
+      kind: "page",
+      context: [],
+      attributes: {},
+      childIds: ["n-2"],
+      children: [button]
+    },
+    capturedAt: "2026-07-29T00:00:00.000Z",
+    snapshotToken: "child-token",
+    nodeCount: 2
+  };
 }

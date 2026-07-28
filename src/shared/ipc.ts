@@ -47,6 +47,13 @@ export type ContextBoundary = {
   hostNodeId: string;
   hostTagName: string;
   hostAttributes: Record<string, string>;
+  frameId?: string;
+  targetId?: string;
+  sessionId?: string;
+  ownerContentOffset?: {
+    x: number;
+    y: number;
+  };
 };
 
 export type SnapshotDiagnostic = {

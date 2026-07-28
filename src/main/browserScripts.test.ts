@@ -143,6 +143,13 @@ test("snapshot script records frame and shadow context boundaries", () => {
   assert.match(SNAPSHOT_SCRIPT, /__uiExplorerSnapshotToken/);
 });
 
+test("snapshot script copies an exact CDP frame marker into the frame boundary", () => {
+  assert.match(SNAPSHOT_SCRIPT, /__uiExplorerFrameContext/);
+  assert.match(SNAPSHOT_SCRIPT, /frameId:/);
+  assert.match(SNAPSHOT_SCRIPT, /targetId:/);
+  assert.match(SNAPSHOT_SCRIPT, /ownerContentOffset:/);
+});
+
 test("snapshot script records accessibility and interaction diagnostics", () => {
   assert.match(SNAPSHOT_SCRIPT, /accessibleName:/);
   assert.match(SNAPSHOT_SCRIPT, /description:/);

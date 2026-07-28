@@ -14,6 +14,8 @@
     "src/main/cdpConnection.test.ts",
     "src/main/webContextRegistry.ts",
     "src/main/webContextRegistry.test.ts",
+    "src/main/multiSessionSnapshot.ts",
+    "src/main/multiSessionSnapshot.test.ts",
     "src/main/browserSession.ts",
     "src/main/browserSession.test.ts",
     "src/main/webSocketFrames.ts",

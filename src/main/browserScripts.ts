@@ -106,12 +106,28 @@ export const SNAPSHOT_SCRIPT = `(() => {
       .join(" ")
       .slice(0, 160);
   };
-  const frameBoundaryFor = (host, hostNodeId) => ({
-    kind: "frame",
-    hostNodeId,
-    hostTagName: host.tagName.toLowerCase(),
-    hostAttributes: readAttributes(host)
-  });
+  const frameBoundaryFor = (host, hostNodeId) => {
+    const marker = host.__uiExplorerFrameContext;
+    const rect = host.getBoundingClientRect();
+    if (marker) {
+      delete host.__uiExplorerFrameContext;
+    }
+    return {
+      kind: "frame",
+      hostNodeId,
+      hostTagName: host.tagName.toLowerCase(),
+      hostAttributes: readAttributes(host),
+      ...(marker ? {
+        frameId: marker.frameId,
+        targetId: marker.targetId,
+        sessionId: marker.sessionId,
+        ownerContentOffset: {
+          x: rect.x + (host.clientLeft || 0),
+          y: rect.y + (host.clientTop || 0)
+        }
+      } : {})
+    };
+  };
   const shadowBoundaryFor = (host, hostNodeId) => ({
     kind: "shadow",
     hostNodeId,

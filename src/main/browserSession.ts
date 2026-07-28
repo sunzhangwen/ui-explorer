@@ -12,7 +12,14 @@ import type {
 import { ELEMENT_PICKER_SCRIPT, GET_PICKED_ELEMENT_SCRIPT, HIGHLIGHT_SCRIPT, SNAPSHOT_SCRIPT } from "./browserScripts.js";
 import { CdpConnection, type CdpEvent } from "./cdpConnection.js";
 import { readBrowserVersion } from "./browserDiscovery.js";
-import { WebContextRegistry } from "./webContextRegistry.js";
+import {
+  stitchSessionSnapshots,
+  type SessionSnapshot
+} from "./multiSessionSnapshot.js";
+import {
+  WebContextRegistry,
+  type ActiveWebContext
+} from "./webContextRegistry.js";
 
 type RuntimeEvaluateResult<T> = {
   result: {
@@ -155,7 +162,43 @@ export class BrowserSession {
   }
 
   async getDomSnapshot(): Promise<DomSnapshotResult> {
-    return this.evaluate<DomSnapshotResult>(SNAPSHOT_SCRIPT);
+    if (!this.rootSessionId) {
+      return this.evaluate<DomSnapshotResult>(SNAPSHOT_SCRIPT);
+    }
+    await this.eventQueue;
+    const contexts = this.contextRegistry.getActiveContexts();
+    const rootContext = contexts.find((context) =>
+      context.sessionId === this.rootSessionId
+    );
+    if (!rootContext) {
+      throw new Error("The root page execution context is not ready.");
+    }
+
+    await this.markFrameOwners(contexts);
+    const revisions = new Map(
+      contexts.map((context) => [context.sessionId, context.revision])
+    );
+    const snapshots = await Promise.all(
+      contexts.map(async (context): Promise<SessionSnapshot> => ({
+        sessionId: context.sessionId,
+        targetId: context.targetId,
+        frameId: context.frameId,
+        parentFrameId: context.parentFrameId,
+        revision: context.revision,
+        result: await this.evaluateInSession<DomSnapshotResult>(
+          SNAPSHOT_SCRIPT,
+          context.sessionId
+        )
+      }))
+    );
+    await this.eventQueue;
+    for (const [sessionId, revision] of revisions) {
+      const current = this.contextRegistry.getBySessionId(sessionId);
+      if (!current || current.revision !== revision || current.state !== "active") {
+        throw new Error(`Snapshot invalidated by navigation or detach: ${sessionId}`);
+      }
+    }
+    return stitchSessionSnapshots(rootContext.sessionId, snapshots);
   }
 
   async highlightElement(request: HighlightElementRequest): Promise<HighlightResult> {
@@ -244,11 +287,18 @@ export class BrowserSession {
     if (!this.rootSessionId) {
       throw new Error("No CDP page session is attached.");
     }
+    return this.evaluateInSession<T>(expression, this.rootSessionId);
+  }
+
+  private async evaluateInSession<T>(
+    expression: string,
+    sessionId: string
+  ): Promise<T> {
     const response = await this.targetClient.send<RuntimeEvaluateResult<T>>("Runtime.evaluate", {
       expression,
       awaitPromise: true,
       returnByValue: true
-    }, this.rootSessionId);
+    }, sessionId);
 
     if (response.exceptionDetails) {
       throw new Error(response.exceptionDetails.text ?? "Runtime evaluation failed.");
@@ -259,6 +309,80 @@ export class BrowserSession {
     }
 
     return response.result.value;
+  }
+
+  private async markFrameOwners(contexts: ActiveWebContext[]): Promise<void> {
+    await Promise.all(
+      contexts
+        .filter((context) =>
+          context.sessionId !== this.rootSessionId &&
+          Boolean(context.frameId && context.parentFrameId)
+        )
+        .map(async (context) => {
+          const parent = context.parentFrameId
+            ? this.contextRegistry.getByFrameId(context.parentFrameId)
+            : undefined;
+          if (!parent || parent.state !== "active" || !context.frameId) {
+            this.contextRegistry.invalidateSession(
+              context.sessionId,
+              "frame-owner-unresolved",
+              `Unable to resolve parent session for frame ${context.frameId ?? context.sessionId}.`
+            );
+            return;
+          }
+          try {
+            const owner = await this.targetClient.send<{
+              backendNodeId?: number;
+              nodeId?: number;
+            }>(
+              "DOM.getFrameOwner",
+              { frameId: context.frameId },
+              parent.sessionId
+            );
+            const resolved = await this.targetClient.send<{
+              object?: { objectId?: string };
+            }>(
+              "DOM.resolveNode",
+              {
+                ...(owner.backendNodeId !== undefined
+                  ? { backendNodeId: owner.backendNodeId }
+                  : { nodeId: owner.nodeId })
+              },
+              parent.sessionId
+            );
+            const objectId = resolved.object?.objectId;
+            if (!objectId) {
+              throw new Error("CDP did not return the frame owner object.");
+            }
+            await this.targetClient.send(
+              "Runtime.callFunctionOn",
+              {
+                objectId,
+                functionDeclaration: `function(frameId, targetId, sessionId) {
+                  Object.defineProperty(this, "__uiExplorerFrameContext", {
+                    configurable: true,
+                    enumerable: false,
+                    value: { frameId, targetId, sessionId }
+                  });
+                }`,
+                arguments: [
+                  { value: context.frameId },
+                  { value: context.targetId },
+                  { value: context.sessionId }
+                ],
+                returnByValue: true
+              },
+              parent.sessionId
+            );
+          } catch (error) {
+            this.contextRegistry.invalidateSession(
+              context.sessionId,
+              "frame-owner-unresolved",
+              error instanceof Error ? error.message : String(error)
+            );
+          }
+        })
+    );
   }
 
   private async connectBrowserWebSocket(): Promise<void> {
