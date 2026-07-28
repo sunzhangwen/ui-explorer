@@ -16,7 +16,7 @@ export function getLocalDebugEndpointCandidates(): string[] {
 
 export async function discoverBrowserEndpoints(
   candidates = getLocalDebugEndpointCandidates(),
-  probe: DebugEndpointProbe = probeDebugEndpoint
+  probe: DebugEndpointProbe = readBrowserVersion
 ): Promise<BrowserDebugEndpoint[]> {
   const results = await Promise.all(
     candidates.map(async (candidate) => {
@@ -42,7 +42,7 @@ export async function discoverBrowserEndpoints(
   });
 }
 
-async function probeDebugEndpoint(
+export async function readBrowserVersion(
   endpoint: string
 ): Promise<{ browser: string; webSocketDebuggerUrl?: string }> {
   const response = await fetch(`${endpoint}/json/version`, {
