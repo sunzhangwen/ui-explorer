@@ -360,7 +360,7 @@ git commit -m "feat: filter table export ranges"
 - Consumes: selected headers, rows, caption, and suggested base name.
 - Produces: discriminated `TableExportSaveRequest`, validated requests, and `.xlsx` buffers.
 
-- [ ] **Step 1: Add ExcelJS**
+- [x] **Step 1: Add ExcelJS**
 
 Run:
 
@@ -370,7 +370,7 @@ npm install exceljs@4.4.0
 
 Expected: `exceljs` appears in dependencies and the lock file is updated.
 
-- [ ] **Step 2: Write failing request-validation tests**
+- [x] **Step 2: Write failing request-validation tests**
 
 Assert that text payloads accept only text formats, Excel accepts only rectangular non-empty string data, and mismatched payloads fail:
 
@@ -382,7 +382,7 @@ assert.equal(validateTableExportSaveRequest({
 }).ok, true);
 ```
 
-- [ ] **Step 3: Define and validate the IPC union**
+- [x] **Step 3: Define and validate the IPC union**
 
 Add the exact `TableTextExportSaveRequest`, `TableExcelExportSaveRequest`, and `TableExportSaveRequest` union from the approved design. Implement:
 
@@ -392,7 +392,7 @@ export function validateTableExportSaveRequest(
 ): { ok: true; request: TableExportSaveRequest } | { ok: false; message: string };
 ```
 
-- [ ] **Step 4: Write failing workbook round-trip tests**
+- [x] **Step 4: Write failing workbook round-trip tests**
 
 Generate and reload a workbook to assert:
 
@@ -406,7 +406,7 @@ worksheet.getRow(1).font.bold === true;
 
 Also test invalid worksheet characters, 31-character truncation, fallback `Table`, and widths clamped to 12–48.
 
-- [ ] **Step 5: Implement workbook generation**
+- [x] **Step 5: Implement workbook generation**
 
 Create:
 
@@ -424,7 +424,7 @@ export async function buildTableWorkbookBuffer(
 
 Use one worksheet, string cell values, a frozen first row, automatic filter, bold filled header, and clamped widths.
 
-- [ ] **Step 6: Dispatch text and binary saves in the main process**
+- [x] **Step 6: Dispatch text and binary saves in the main process**
 
 Validate before opening the dialog. For text requests, keep UTF-8/BOM behavior. For Excel requests:
 
@@ -435,7 +435,7 @@ await writeFile(filePath, data);
 
 Return the existing saved/cancelled/error union.
 
-- [ ] **Step 7: Run workbook, IPC, type, and build checks**
+- [x] **Step 7: Run workbook, IPC, type, and build checks**
 
 Run:
 
@@ -447,7 +447,7 @@ npm run build
 
 Expected: PASS.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```powershell
 git add package.json package-lock.json src/main/tableWorkbook.ts src/main/tableWorkbook.test.ts src/shared/tableExportRequest.ts src/shared/tableExportRequest.test.ts src/shared/ipc.ts src/main/main.ts tsconfig.test.json

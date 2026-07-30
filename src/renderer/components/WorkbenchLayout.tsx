@@ -35,7 +35,12 @@ import type { PointerEvent, ReactNode } from "react";
 import { analyzeElementAttributes, type AttributeLocatorMarker } from "../../shared/attributeInsights";
 import { getCaptureCountdown } from "../../shared/captureTiming";
 import { findElementSnapshot, flattenElementSnapshot, formatElementAttributes } from "../../shared/domSnapshot";
-import type { ElementSnapshot, SnapshotDiagnostic, TableExportSaveResult } from "../../shared/ipc";
+import type {
+  ElementSnapshot,
+  SnapshotDiagnostic,
+  TableExportSaveRequest,
+  TableExportSaveResult
+} from "../../shared/ipc";
 import {
   applySelectorEdit,
   diffSelectorCandidates,
@@ -50,7 +55,6 @@ import {
 import {
   buildAllTableExports,
   TABLE_TEXT_EXPORT_FORMATS,
-  type TableExportFormat,
   type TableTextExportFormat
 } from "../../shared/tableExport";
 import { extractTableForSelection, type ExtractedTable } from "../../shared/tableExtraction";
@@ -939,11 +943,7 @@ function TableDataPanel({
   table,
   theme
 }: {
-  onSave: (request: {
-    format: TableExportFormat;
-    content: string;
-    suggestedBaseName: string;
-  }) => Promise<TableExportSaveResult>;
+  onSave: (request: TableExportSaveRequest) => Promise<TableExportSaveResult>;
   table: ExtractedTable;
   theme: "light" | "dark";
 }): JSX.Element {

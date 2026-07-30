@@ -16,6 +16,8 @@
     "src/main/chromeInstanceManager.test.ts",
     "src/main/testPageServer.ts",
     "src/main/testPageServer.test.ts",
+    "src/main/tableWorkbook.ts",
+    "src/main/tableWorkbook.test.ts",
     "src/main/chromePageWorkflow.ts",
     "src/main/chromePageWorkflow.test.ts",
     "src/main/cdpConnection.ts",

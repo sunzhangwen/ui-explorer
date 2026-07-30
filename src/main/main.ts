@@ -8,11 +8,10 @@ import {
   type AppInfo,
   type HighlightElementRequest,
   type HighlightElementsRequest,
-  type TableExportSaveRequest,
   type TableExportSaveResult
 } from "../shared/ipc.js";
 import { isOpenChromePageRequest } from "../shared/chromeLaunch.js";
-import { isTableExportFormat } from "../shared/tableExport.js";
+import { validateTableExportSaveRequest } from "../shared/tableExportRequest.js";
 import {
   ensureTableFileExtension,
   getTableFileOptions,
@@ -27,6 +26,7 @@ import {
 } from "./chromeExecutable.js";
 import { ChromeInstanceManager } from "./chromeInstanceManager.js";
 import { ChromePageWorkflow } from "./chromePageWorkflow.js";
+import { buildTableWorkbookBuffer } from "./tableWorkbook.js";
 import { TestPageServer } from "./testPageServer.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -114,15 +114,12 @@ function registerIpcHandlers(): void {
   ipcMain.handle(IPC_CHANNELS.getPickedElementId, () => browserSession.getPickedElementId());
   ipcMain.handle(
     IPC_CHANNELS.saveTableExport,
-    async (_event, request: TableExportSaveRequest): Promise<TableExportSaveResult> => {
-      if (
-        !request ||
-        !isTableExportFormat(request.format) ||
-        typeof request.content !== "string" ||
-        typeof request.suggestedBaseName !== "string"
-      ) {
-        return { status: "error", message: "Invalid table export request." };
+    async (_event, value: unknown): Promise<TableExportSaveResult> => {
+      const validation = validateTableExportSaveRequest(value);
+      if (!validation.ok) {
+        return { status: "error", message: validation.message };
       }
+      const request = validation.request;
 
       const options = getTableFileOptions(request.format);
       const result = await dialog.showSaveDialog({
@@ -135,11 +132,15 @@ function registerIpcHandlers(): void {
 
       try {
         const filePath = ensureTableFileExtension(result.filePath, request.format);
-        await writeFile(
-          filePath,
-          prepareTableFileContent(request.format, request.content),
-          "utf8"
-        );
+        if (request.format === "xlsx") {
+          await writeFile(filePath, await buildTableWorkbookBuffer(request.table));
+        } else {
+          await writeFile(
+            filePath,
+            prepareTableFileContent(request.format, request.content),
+            "utf8"
+          );
+        }
         return { status: "saved", filePath };
       } catch (error) {
         return {

@@ -1,4 +1,6 @@
-import type { TableExportFormat } from "./tableExport.js";
+import type {
+  TableTextExportFormat
+} from "./tableExport.js";
 import type {
   OpenChromePageProgress,
   OpenChromePageRequest,
@@ -157,11 +159,25 @@ export type BrowserConnectionDiagnostics = {
   rawTargetTypes: string[];
 };
 
-export type TableExportSaveRequest = {
-  format: TableExportFormat;
+export type TableTextExportSaveRequest = {
+  format: TableTextExportFormat;
   content: string;
   suggestedBaseName: string;
 };
+
+export type TableExcelExportSaveRequest = {
+  format: "xlsx";
+  table: {
+    caption: string | null;
+    headers: string[];
+    rows: string[][];
+  };
+  suggestedBaseName: string;
+};
+
+export type TableExportSaveRequest =
+  | TableTextExportSaveRequest
+  | TableExcelExportSaveRequest;
 
 export type TableExportSaveResult =
   | { status: "saved"; filePath: string }
