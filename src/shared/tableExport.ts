@@ -1,16 +1,25 @@
 import type { ExtractedTable } from "./tableExtraction.js";
 
-export const TABLE_EXPORT_FORMATS = ["csv", "json", "markdown"] as const;
+export const TABLE_TEXT_EXPORT_FORMATS = ["csv", "json", "markdown"] as const;
+export const TABLE_EXPORT_FORMATS = [...TABLE_TEXT_EXPORT_FORMATS, "xlsx"] as const;
 
+export type TableTextExportFormat = (typeof TABLE_TEXT_EXPORT_FORMATS)[number];
 export type TableExportFormat = (typeof TABLE_EXPORT_FORMATS)[number];
 
-export type TableExports = Record<TableExportFormat, string>;
+export type TableExports = Record<TableTextExportFormat, string>;
 
 export function isTableExportFormat(value: unknown): value is TableExportFormat {
   return typeof value === "string" && TABLE_EXPORT_FORMATS.some((format) => format === value);
 }
 
-export function buildTableExport(table: ExtractedTable, format: TableExportFormat): string {
+export function isTableTextExportFormat(value: unknown): value is TableTextExportFormat {
+  return (
+    typeof value === "string" &&
+    TABLE_TEXT_EXPORT_FORMATS.some((format) => format === value)
+  );
+}
+
+export function buildTableExport(table: ExtractedTable, format: TableTextExportFormat): string {
   switch (format) {
     case "csv":
       return toCsv(table);

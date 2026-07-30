@@ -47,7 +47,12 @@ import {
   type SelectorExports,
   type SelectorLayer
 } from "../../shared/selector";
-import { buildAllTableExports, TABLE_EXPORT_FORMATS, type TableExportFormat } from "../../shared/tableExport";
+import {
+  buildAllTableExports,
+  TABLE_TEXT_EXPORT_FORMATS,
+  type TableExportFormat,
+  type TableTextExportFormat
+} from "../../shared/tableExport";
 import { extractTableForSelection, type ExtractedTable } from "../../shared/tableExtraction";
 import { useI18n } from "../i18n/I18nProvider";
 import type { MessageKey } from "../i18n/messages";
@@ -943,7 +948,7 @@ function TableDataPanel({
   theme: "light" | "dark";
 }): JSX.Element {
   const { t } = useI18n();
-  const [format, setFormat] = useState<TableExportFormat>("csv");
+  const [format, setFormat] = useState<TableTextExportFormat>("csv");
   const [scrollTop, setScrollTop] = useState(0);
   const [feedback, setFeedback] = useState<{
     kind: "copied" | "copy-error" | "saved" | "cancelled" | "save-error";
@@ -1069,7 +1074,7 @@ function TableDataPanel({
           <Code2 size={14} />
           {t("table.exportPreview")}
           <div className="editor-tabs" role="tablist" aria-label={t("table.exportPreview")}>
-            {TABLE_EXPORT_FORMATS.map((candidate) => (
+            {TABLE_TEXT_EXPORT_FORMATS.map((candidate) => (
               <button
                 type="button"
                 key={candidate}

@@ -1,6 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildAllTableExports, buildTableExport, isTableExportFormat } from "./tableExport.js";
+import {
+  buildAllTableExports,
+  buildTableExport,
+  isTableExportFormat,
+  isTableTextExportFormat,
+  TABLE_EXPORT_FORMATS,
+  TABLE_TEXT_EXPORT_FORMATS
+} from "./tableExport.js";
 import type { ExtractedTable } from "./tableExtraction.js";
 
 function table(headers: string[], rows: string[][]): ExtractedTable {
@@ -53,9 +60,13 @@ test("all formats preserve normalized header and row order", () => {
   assert.match(exports.markdown, /\| Identity \| Migration \| Migration \|/);
 });
 
-test("recognizes only supported table export formats at runtime", () => {
+test("separates text export formats from all supported table file formats", () => {
+  assert.deepEqual(TABLE_TEXT_EXPORT_FORMATS, ["csv", "json", "markdown"]);
+  assert.deepEqual(TABLE_EXPORT_FORMATS, ["csv", "json", "markdown", "xlsx"]);
   assert.equal(isTableExportFormat("csv"), true);
   assert.equal(isTableExportFormat("markdown"), true);
-  assert.equal(isTableExportFormat("xlsx"), false);
+  assert.equal(isTableExportFormat("xlsx"), true);
   assert.equal(isTableExportFormat(null), false);
+  assert.equal(isTableTextExportFormat("json"), true);
+  assert.equal(isTableTextExportFormat("xlsx"), false);
 });

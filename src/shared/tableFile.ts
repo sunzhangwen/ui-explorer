@@ -1,14 +1,15 @@
 import type { TableExportFormat } from "./tableExport.js";
 
 export type TableFileOptions = {
-  extension: "csv" | "json" | "md";
-  label: "CSV" | "JSON" | "Markdown";
+  extension: "csv" | "json" | "md" | "xlsx";
+  label: "CSV" | "JSON" | "Markdown" | "Excel";
 };
 
 const TABLE_FILE_OPTIONS = {
   csv: { extension: "csv", label: "CSV" },
   json: { extension: "json", label: "JSON" },
-  markdown: { extension: "md", label: "Markdown" }
+  markdown: { extension: "md", label: "Markdown" },
+  xlsx: { extension: "xlsx", label: "Excel" }
 } as const satisfies Record<TableExportFormat, TableFileOptions>;
 
 export function getTableFileOptions(format: TableExportFormat): TableFileOptions {

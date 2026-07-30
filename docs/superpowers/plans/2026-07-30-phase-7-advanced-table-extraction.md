@@ -265,7 +265,7 @@ git commit -m "feat: recognize Grid and Flex pseudo tables"
 - Consumes: canonical `ExtractedTable`.
 - Produces: `TableSelection`, `createFullTableSelection`, `applyTableSelection`, and text-only export format guards.
 
-- [ ] **Step 1: Write failing selection tests**
+- [x] **Step 1: Write failing selection tests**
 
 Assert:
 
@@ -281,7 +281,7 @@ applyTableSelection(table, {
 
 returns the second row with columns in original order `[0, 2]`, rebuilds records, and preserves recognition metadata. Also assert empty rows or empty columns produce an empty export range.
 
-- [ ] **Step 2: Run focused tests and verify RED**
+- [x] **Step 2: Run focused tests and verify RED**
 
 Run:
 
@@ -291,7 +291,7 @@ npm test -- --test-name-pattern="table selection"
 
 Expected: FAIL because `tableSelection.ts` does not exist.
 
-- [ ] **Step 3: Implement the pure selection transform**
+- [x] **Step 3: Implement the pure selection transform**
 
 Create:
 
@@ -311,7 +311,7 @@ export function applyTableSelection(
 
 Normalize indexes through a bounded `Set`, then iterate source indexes so source order always wins.
 
-- [ ] **Step 4: Separate text and file format guards**
+- [x] **Step 4: Separate text and file format guards**
 
 Use:
 
@@ -324,7 +324,7 @@ export type TableExportFormat = (typeof TABLE_EXPORT_FORMATS)[number];
 
 Keep `buildTableExport` and `buildAllTableExports` text-only. Add `.xlsx` file options without trying to create text content.
 
-- [ ] **Step 5: Run selection/export/file tests**
+- [x] **Step 5: Run selection/export/file tests**
 
 Run:
 
@@ -334,7 +334,7 @@ npm test -- --test-name-pattern="table selection|CSV|JSON|Markdown|file"
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```powershell
 git add src/shared/tableSelection.ts src/shared/tableSelection.test.ts src/shared/tableExport.ts src/shared/tableExport.test.ts src/shared/tableFile.ts src/shared/tableFile.test.ts
