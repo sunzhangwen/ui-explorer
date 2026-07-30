@@ -22,6 +22,31 @@ export type MessageKey =
   | "panel.selector"
   | "panel.tableData"
   | "panel.tests"
+  | "chrome.cardTitle"
+  | "chrome.url"
+  | "chrome.urlPlaceholder"
+  | "chrome.launchAndOpen"
+  | "chrome.openNewTab"
+  | "chrome.openTestPage"
+  | "chrome.opened"
+  | "chrome.instance.none"
+  | "chrome.instance.external"
+  | "chrome.progress.detecting"
+  | "chrome.progress.selecting-executable"
+  | "chrome.progress.launching"
+  | "chrome.progress.connecting"
+  | "chrome.progress.opening"
+  | "chrome.error.chrome-not-found"
+  | "chrome.error.invalid-chrome-path"
+  | "chrome.error.invalid-url"
+  | "chrome.error.no-debug-port"
+  | "chrome.error.profile-in-use"
+  | "chrome.error.launch-failed"
+  | "chrome.error.launch-exited"
+  | "chrome.error.cdp-timeout"
+  | "chrome.error.target-create-failed"
+  | "chrome.error.target-attach-failed"
+  | "chrome.error.test-server-failed"
   | "empty.properties"
   | "empty.selector"
   | "connection.status"
@@ -187,6 +212,31 @@ export const messages: Record<"zh-CN" | "en-US", Record<MessageKey, string>> = {
     "panel.selector": "Selector",
     "panel.tableData": "表格数据",
     "panel.tests": "测试页面",
+    "chrome.cardTitle": "Chrome 调试实例",
+    "chrome.url": "页面网址",
+    "chrome.urlPlaceholder": "留空打开空白页，或输入 example.com",
+    "chrome.launchAndOpen": "启动 Chrome 并打开",
+    "chrome.openNewTab": "在新标签页打开",
+    "chrome.openTestPage": "在 Chrome 中打开",
+    "chrome.opened": "已打开并自动连接",
+    "chrome.instance.none": "未检测到调试实例",
+    "chrome.instance.external": "可复用现有调试实例",
+    "chrome.progress.detecting": "正在检测…",
+    "chrome.progress.selecting-executable": "正在选择 Chrome…",
+    "chrome.progress.launching": "正在启动…",
+    "chrome.progress.connecting": "正在连接…",
+    "chrome.progress.opening": "正在打开页面…",
+    "chrome.error.chrome-not-found": "未找到 Google Chrome。",
+    "chrome.error.invalid-chrome-path": "选择的文件不是有效的 chrome.exe。",
+    "chrome.error.invalid-url": "网址格式或协议不受支持。",
+    "chrome.error.no-debug-port": "没有可用的本机调试端口。",
+    "chrome.error.profile-in-use": "专用 Chrome 配置正在被其他实例使用。",
+    "chrome.error.launch-failed": "无法启动 Chrome。",
+    "chrome.error.launch-exited": "Chrome 在启动过程中提前退出。",
+    "chrome.error.cdp-timeout": "等待 Chrome 调试端点超时。",
+    "chrome.error.target-create-failed": "无法创建新的 Chrome 标签页。",
+    "chrome.error.target-attach-failed": "标签页已打开，但无法自动连接。",
+    "chrome.error.test-server-failed": "无法启动内置测试页服务。",
     "empty.properties": "选择元素后，这里会显示属性、可访问性和布局信息。",
     "empty.selector": "选择页面元素后，这里会显示 Selector 候选、评分和诊断。",
     "connection.status": "连接状态",
@@ -352,6 +402,31 @@ export const messages: Record<"zh-CN" | "en-US", Record<MessageKey, string>> = {
     "panel.selector": "Selector",
     "panel.tableData": "Table data",
     "panel.tests": "Test pages",
+    "chrome.cardTitle": "Chrome debug instance",
+    "chrome.url": "Page URL",
+    "chrome.urlPlaceholder": "Leave blank for a blank page, or enter example.com",
+    "chrome.launchAndOpen": "Launch Chrome and open",
+    "chrome.openNewTab": "Open in new tab",
+    "chrome.openTestPage": "Open in Chrome",
+    "chrome.opened": "Opened and connected",
+    "chrome.instance.none": "No debug instance detected",
+    "chrome.instance.external": "An existing debug instance is available",
+    "chrome.progress.detecting": "Detecting…",
+    "chrome.progress.selecting-executable": "Selecting Chrome…",
+    "chrome.progress.launching": "Launching…",
+    "chrome.progress.connecting": "Connecting…",
+    "chrome.progress.opening": "Opening page…",
+    "chrome.error.chrome-not-found": "Google Chrome was not found.",
+    "chrome.error.invalid-chrome-path": "The selected file is not a valid chrome.exe.",
+    "chrome.error.invalid-url": "The URL format or protocol is not supported.",
+    "chrome.error.no-debug-port": "No local debug port is available.",
+    "chrome.error.profile-in-use": "The dedicated Chrome profile is already in use.",
+    "chrome.error.launch-failed": "Chrome could not be launched.",
+    "chrome.error.launch-exited": "Chrome exited before startup completed.",
+    "chrome.error.cdp-timeout": "Timed out waiting for the Chrome debug endpoint.",
+    "chrome.error.target-create-failed": "A new Chrome tab could not be created.",
+    "chrome.error.target-attach-failed": "The tab opened, but UI Explorer could not connect.",
+    "chrome.error.test-server-failed": "The built-in test page server could not start.",
     "empty.properties": "Selected element attributes, accessibility, and layout will appear here.",
     "empty.selector": "Select a page element to view selector candidates, scores, and diagnostics.",
     "connection.status": "Connection",

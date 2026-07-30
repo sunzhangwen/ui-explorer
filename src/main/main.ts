@@ -11,6 +11,7 @@ import {
   type TableExportSaveRequest,
   type TableExportSaveResult
 } from "../shared/ipc.js";
+import { isOpenChromePageRequest } from "../shared/chromeLaunch.js";
 import { isTableExportFormat } from "../shared/tableExport.js";
 import {
   ensureTableFileExtension,
@@ -20,12 +21,24 @@ import {
 } from "../shared/tableFile.js";
 import { BrowserSession } from "./browserSession.js";
 import { discoverBrowserEndpoints } from "./browserDiscovery.js";
+import {
+  ChromeExecutableLocator,
+  ChromeLaunchSettingsStore
+} from "./chromeExecutable.js";
+import { ChromeInstanceManager } from "./chromeInstanceManager.js";
+import { ChromePageWorkflow } from "./chromePageWorkflow.js";
+import { TestPageServer } from "./testPageServer.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const isDev = Boolean(process.env.VITE_DEV_SERVER_URL);
 const browserSession = new BrowserSession();
+let chromeInstanceManager: ChromeInstanceManager | null = null;
+let testPageServer: TestPageServer | null = null;
+let chromePageWorkflow: ChromePageWorkflow | null = null;
+let cleanupStarted = false;
+let cleanupDone = false;
 
 function createWindow(): void {
   const mainWindow = new BrowserWindow({
@@ -68,6 +81,20 @@ function registerIpcHandlers(): void {
   });
 
   ipcMain.handle(IPC_CHANNELS.listTestPages, () => TEST_PAGES);
+  ipcMain.handle(IPC_CHANNELS.openChromePage, async (event, request: unknown) => {
+    if (!chromePageWorkflow || !isOpenChromePageRequest(request)) {
+      return {
+        status: "error",
+        code: "launch-failed",
+        message: "Invalid Chrome open request."
+      };
+    }
+    return chromePageWorkflow.open(request, (progress) => {
+      if (!event.sender.isDestroyed()) {
+        event.sender.send(IPC_CHANNELS.openChromePageProgress, progress);
+      }
+    });
+  });
   ipcMain.handle(IPC_CHANNELS.discoverBrowserEndpoints, () => discoverBrowserEndpoints());
   ipcMain.handle(IPC_CHANNELS.connectBrowser, (_event, endpoint: string) => browserSession.connect(endpoint));
   ipcMain.handle(IPC_CHANNELS.refreshBrowserConnection, () => browserSession.refreshConnection());
@@ -124,6 +151,37 @@ function registerIpcHandlers(): void {
   );
 }
 
+function initializeChromeWorkflow(): void {
+  const settings = new ChromeLaunchSettingsStore(
+    path.join(app.getPath("userData"), "chrome-settings.json")
+  );
+  const locator = new ChromeExecutableLocator({
+    settings,
+    selectExecutable: async () => {
+      const result = await dialog.showOpenDialog({
+        title: "Select Google Chrome",
+        properties: ["openFile"],
+        filters: [{ name: "Google Chrome", extensions: ["exe"] }]
+      });
+      return result.canceled ? null : result.filePaths[0] ?? null;
+    }
+  });
+  chromeInstanceManager = new ChromeInstanceManager({
+    locator,
+    settings,
+    profilePath: path.join(app.getPath("userData"), "chrome-profile")
+  });
+  testPageServer = new TestPageServer({
+    devBaseUrl: process.env.VITE_DEV_SERVER_URL,
+    fixtureRoot: path.join(__dirname, "../../dist/test-pages")
+  });
+  chromePageWorkflow = new ChromePageWorkflow({
+    instances: chromeInstanceManager,
+    testPages: testPageServer,
+    session: browserSession
+  });
+}
+
 function registerCaptureShortcut(): void {
   const registered = globalShortcut.register("CommandOrControl+Shift+E", () => {
     for (const window of BrowserWindow.getAllWindows()) {
@@ -136,6 +194,7 @@ function registerCaptureShortcut(): void {
 }
 
 app.whenReady().then(() => {
+  initializeChromeWorkflow();
   registerIpcHandlers();
   createWindow();
   registerCaptureShortcut();
@@ -144,6 +203,20 @@ app.whenReady().then(() => {
     if (BrowserWindow.getAllWindows().length === 0) {
       createWindow();
     }
+  });
+});
+
+app.on("before-quit", (event) => {
+  if (cleanupDone) return;
+  event.preventDefault();
+  if (cleanupStarted) return;
+  cleanupStarted = true;
+  void Promise.all([
+    chromeInstanceManager?.closeManaged(),
+    testPageServer?.close()
+  ]).finally(() => {
+    cleanupDone = true;
+    app.quit();
   });
 });
 

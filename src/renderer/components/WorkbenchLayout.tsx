@@ -97,6 +97,7 @@ export function WorkbenchLayout(): JSX.Element {
     browserConnection,
     browserDebugEndpoints,
     browserTargets,
+    chromeOpenState,
     connectBrowser,
     density,
     discoverBrowserEndpoints,
@@ -106,6 +107,7 @@ export function WorkbenchLayout(): JSX.Element {
     isDiscoveringBrowserEndpoints,
     locale,
     monitorBrowserConnection,
+    openChromePage,
     panelSizes,
     refreshDomSnapshot,
     selectBrowserTarget,
@@ -132,6 +134,7 @@ export function WorkbenchLayout(): JSX.Element {
 
   const [dragging, setDragging] = useState<ResizeSide | null>(null);
   const [debugEndpoint, setDebugEndpoint] = useState("localhost:9222");
+  const [pageUrl, setPageUrl] = useState("");
   const [treeScrollTop, setTreeScrollTop] = useState(0);
   const [collapsedNodeIds, setCollapsedNodeIds] = useState<Set<string>>(() => new Set());
   const [treeSearchQuery, setTreeSearchQuery] = useState("");
@@ -459,6 +462,28 @@ export function WorkbenchLayout(): JSX.Element {
     : "-";
   const selectedTargetSummary = selectedTarget?.title || selectedTarget?.url || "-";
   const selectedTestSummary = selectedPage ? t(selectedPage.titleKey) : "-";
+  const chromeOpenBusy = [
+    "detecting",
+    "selecting-executable",
+    "launching",
+    "connecting",
+    "opening"
+  ].includes(chromeOpenState.status);
+  const hasChromeInstance =
+    browserConnection.state === "connected" || browserDebugEndpoints.length > 0;
+  const chromeButtonKey: MessageKey = chromeOpenBusy
+    ? `chrome.progress.${chromeOpenState.status}` as MessageKey
+    : hasChromeInstance
+      ? "chrome.openNewTab"
+      : "chrome.launchAndOpen";
+  const chromeFeedback =
+    chromeOpenState.status === "error"
+      ? t(`chrome.error.${chromeOpenState.code}` as MessageKey)
+      : chromeOpenState.status === "success"
+        ? t("chrome.opened")
+        : chromeOpenBusy
+          ? t(chromeButtonKey)
+          : t(hasChromeInstance ? "chrome.instance.external" : "chrome.instance.none");
 
   return (
     <div className="app-shell" data-density={density}>
@@ -546,6 +571,32 @@ export function WorkbenchLayout(): JSX.Element {
                 </div>
               ) : null}
             </section>
+            <form
+              className="chrome-launch-card"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void openChromePage(
+                  { kind: "custom", value: pageUrl },
+                  debugEndpoint
+                );
+              }}
+            >
+              <strong>{t("chrome.cardTitle")}</strong>
+              <label>
+                <span>{t("chrome.url")}</span>
+                <input
+                  value={pageUrl}
+                  placeholder={t("chrome.urlPlaceholder")}
+                  disabled={chromeOpenBusy}
+                  onChange={(event) => setPageUrl(event.currentTarget.value)}
+                />
+              </label>
+              <button type="submit" disabled={chromeOpenBusy}>
+                <PlugZap size={13} />
+                {t(chromeButtonKey)}
+              </button>
+              <p data-status={chromeOpenState.status}>{chromeFeedback}</p>
+            </form>
           </CollapsibleSection>
 
           <CollapsibleSection
@@ -580,15 +631,27 @@ export function WorkbenchLayout(): JSX.Element {
           >
             <div className="test-list">
               {testPages.map((page) => (
-                <button
-                  type="button"
-                  className={page.id === selectedPage?.id ? "test-page selected" : "test-page"}
-                  key={page.id}
-                  onClick={() => selectTestPage(page.id)}
-                >
-                  <span>{t(page.titleKey)}</span>
-                  <small>{t(page.descriptionKey)}</small>
-                </button>
+                <div className="test-page-row" key={page.id}>
+                  <button
+                    type="button"
+                    className={page.id === selectedPage?.id ? "test-page selected" : "test-page"}
+                    onClick={() => selectTestPage(page.id)}
+                  >
+                    <span>{t(page.titleKey)}</span>
+                    <small>{t(page.descriptionKey)}</small>
+                  </button>
+                  <button
+                    type="button"
+                    className="test-page-open"
+                    disabled={chromeOpenBusy}
+                    onClick={() => void openChromePage(
+                      { kind: "test-page", id: page.id },
+                      debugEndpoint
+                    )}
+                  >
+                    {t("chrome.openTestPage")}
+                  </button>
+                </div>
               ))}
             </div>
           </CollapsibleSection>

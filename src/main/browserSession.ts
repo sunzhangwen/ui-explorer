@@ -170,6 +170,45 @@ export class BrowserSession {
     return this.getDomSnapshot();
   }
 
+  async createAndSelectTarget(
+    rawEndpoint: string,
+    url: string
+  ): Promise<{
+    connection: BrowserConnectionInfo;
+    snapshot: DomSnapshotResult;
+    bootstrapTargetIds: string[];
+  }> {
+    const endpoint = normalizeDebugEndpoint(rawEndpoint);
+    if (this.endpoint !== endpoint) {
+      this.disconnect();
+      this.endpoint = endpoint;
+    }
+    if (!this.targetClient.isConnected()) {
+      await this.connectBrowserWebSocket();
+    }
+    const before = await this.fetchTargets();
+    const bootstrapTargetIds = before
+      .filter((target) => target.url === "about:blank")
+      .map((target) => target.id);
+    const created = await this.targetClient.send<{ targetId: string }>(
+      "Target.createTarget",
+      { url }
+    );
+    this.targets = await this.fetchTargetsUntilPresent(created.targetId);
+    await this.connectTarget(created.targetId);
+    const snapshot = await this.getDomSnapshot();
+    return {
+      connection: this.getConnectionInfo("connected"),
+      snapshot,
+      bootstrapTargetIds
+    };
+  }
+
+  async closeTarget(targetId: string): Promise<void> {
+    if (!this.targetClient.isConnected()) return;
+    await this.targetClient.send("Target.closeTarget", { targetId });
+  }
+
   async getDomSnapshot(): Promise<DomSnapshotResult> {
     if (!this.rootSessionId) {
       return this.evaluate<DomSnapshotResult>(SNAPSHOT_SCRIPT);
@@ -313,6 +352,19 @@ export class BrowserSession {
 
     console.info("[ui-explorer] browser targets", this.diagnostics);
     return targets;
+  }
+
+  private async fetchTargetsUntilPresent(
+    targetId: string
+  ): Promise<BrowserTarget[]> {
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const targets = await this.fetchTargets();
+      if (targets.some((target) => target.id === targetId)) {
+        return targets;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    throw new Error("Created Chrome target is not available.");
   }
 
   private async connectTarget(targetId: string): Promise<void> {

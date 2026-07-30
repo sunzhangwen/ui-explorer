@@ -1,4 +1,9 @@
 import type { TableExportFormat } from "./tableExport.js";
+import type {
+  OpenChromePageProgress,
+  OpenChromePageRequest,
+  OpenChromePageResult
+} from "./chromeLaunch.js";
 
 export type ThemeName = "light" | "dark";
 export type Locale = "zh-CN" | "en-US";
@@ -158,6 +163,8 @@ export type IpcApi = {
   ping: () => Promise<string>;
   getAppInfo: () => Promise<AppInfo>;
   listTestPages: () => Promise<TestPage[]>;
+  openChromePage: (request: OpenChromePageRequest) => Promise<OpenChromePageResult>;
+  onOpenChromePageProgress: (listener: (progress: OpenChromePageProgress) => void) => () => void;
   discoverBrowserEndpoints: () => Promise<BrowserDebugEndpoint[]>;
   connectBrowser: (endpoint: string) => Promise<BrowserConnectionInfo>;
   refreshBrowserConnection: () => Promise<BrowserConnectionInfo>;
@@ -222,6 +229,8 @@ export const IPC_CHANNELS = {
   ping: "app:ping",
   getAppInfo: "app:get-info",
   listTestPages: "test-pages:list",
+  openChromePage: "browser:open-page",
+  openChromePageProgress: "browser:open-page-progress",
   discoverBrowserEndpoints: "browser:discover-endpoints",
   connectBrowser: "browser:connect",
   refreshBrowserConnection: "browser:refresh-connection",

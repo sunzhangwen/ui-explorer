@@ -6,6 +6,8 @@ const IPC_CHANNELS = {
   ping: "app:ping",
   getAppInfo: "app:get-info",
   listTestPages: "test-pages:list",
+  openChromePage: "browser:open-page",
+  openChromePageProgress: "browser:open-page-progress",
   discoverBrowserEndpoints: "browser:discover-endpoints",
   connectBrowser: "browser:connect",
   refreshBrowserConnection: "browser:refresh-connection",
@@ -25,6 +27,13 @@ const api: IpcApi = {
   ping: () => ipcRenderer.invoke(IPC_CHANNELS.ping),
   getAppInfo: () => ipcRenderer.invoke(IPC_CHANNELS.getAppInfo),
   listTestPages: () => ipcRenderer.invoke(IPC_CHANNELS.listTestPages),
+  openChromePage: (request) => ipcRenderer.invoke(IPC_CHANNELS.openChromePage, request),
+  onOpenChromePageProgress: (listener) => {
+    const handler = (_event: Electron.IpcRendererEvent, progress: Parameters<typeof listener>[0]) =>
+      listener(progress);
+    ipcRenderer.on(IPC_CHANNELS.openChromePageProgress, handler);
+    return () => ipcRenderer.off(IPC_CHANNELS.openChromePageProgress, handler);
+  },
   discoverBrowserEndpoints: () => ipcRenderer.invoke(IPC_CHANNELS.discoverBrowserEndpoints),
   connectBrowser: (endpoint) => ipcRenderer.invoke(IPC_CHANNELS.connectBrowser, endpoint),
   refreshBrowserConnection: () => ipcRenderer.invoke(IPC_CHANNELS.refreshBrowserConnection),

@@ -140,6 +140,85 @@ test("BrowserSession connects to the browser websocket and attaches the selected
   ));
 });
 
+test("BrowserSession createAndSelectTarget attaches the exact newly created page", async () => {
+  const connection = new RecordingConnection();
+  const originalSend = connection.send.bind(connection);
+  connection.send = async <T>(
+    method: string,
+    params?: Record<string, unknown>,
+    sessionId?: string
+  ): Promise<T> => {
+    if (method === "Target.createTarget") {
+      connection.sent.push({ method, params, sessionId });
+      return { targetId: "new-page" } as T;
+    }
+    return originalSend<T>(method, params, sessionId);
+  };
+  const session = new BrowserSession({
+    connection,
+    readBrowserVersion: async () => ({
+      browser: "Chrome/140.0.0.0",
+      webSocketDebuggerUrl: "ws://127.0.0.1:9222/devtools/browser/browser-id"
+    })
+  });
+  let reads = 0;
+  const testSession = session as unknown as {
+    fetchTargets: () => Promise<Array<{
+      id: string;
+      type: string;
+      title: string;
+      url: string;
+      webSocketDebuggerUrl: string;
+    }>>;
+    getDomSnapshot: () => Promise<DomSnapshotResult>;
+  };
+  testSession.fetchTargets = async () => {
+    reads += 1;
+    return reads === 1
+      ? [{
+          id: "bootstrap",
+          type: "page",
+          title: "",
+          url: "about:blank",
+          webSocketDebuggerUrl: "ws://bootstrap"
+        }, {
+          id: "bootstrap-2",
+          type: "page",
+          title: "",
+          url: "about:blank",
+          webSocketDebuggerUrl: "ws://bootstrap-2"
+        }]
+      : [{
+          id: "new-page",
+          type: "page",
+          title: "Example",
+          url: "https://example.com/",
+          webSocketDebuggerUrl: "ws://new-page"
+        }];
+  };
+  testSession.getDomSnapshot = async () => ({
+    root: null,
+    capturedAt: "2026-07-30T00:00:00.000Z",
+    nodeCount: 0
+  });
+
+  const result = await session.createAndSelectTarget(
+    "http://127.0.0.1:9222",
+    "https://example.com/"
+  );
+
+  assert.equal(result.connection.targetId, "new-page");
+  assert.deepEqual(result.bootstrapTargetIds, ["bootstrap", "bootstrap-2"]);
+  assert.ok(connection.sent.some((command) =>
+    command.method === "Target.createTarget" &&
+    command.params?.url === "https://example.com/"
+  ));
+  assert.ok(connection.sent.some((command) =>
+    command.method === "Target.attachToTarget" &&
+    command.params?.targetId === "new-page"
+  ));
+});
+
 test("BrowserSession recursively enables auto attach on a newly attached iframe session", async () => {
   const connection = new RecordingConnection();
   const session = new BrowserSession({

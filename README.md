@@ -63,12 +63,19 @@ http://127.0.0.1:5173/
 
 ## 连接浏览器调试目标
 
-UI Explorer 需要连接开启远程调试端口的 Chrome 或 Edge。
+Windows 版可以直接从左侧“Chrome 调试实例”区域启动并连接 Google Chrome：
 
-Chrome 示例：
+1. 输入网址；留空会打开 `about:blank`。
+2. 点击“启动 Chrome 并打开”。如果已经存在本机调试实例，应用会在该实例中新建标签页。
+3. UI Explorer 自动连接并选中新标签页，不会覆盖当前正在检查的页面。
+
+应用使用独立且持久化的 Chrome Profile，保留调试环境中的登录状态，但不会访问日常 Chrome Profile。自动查找不到 Chrome 时会要求手动选择 `chrome.exe`。正常退出 UI Explorer 时，只关闭由本次应用进程启动的专用 Chrome。
+
+内置测试页右侧的“在 Chrome 中打开”使用同一流程，并在开发和生产构建中自动提供可访问的本机 HTTP 地址。
+
+顶部调试地址仍可用于手动连接已经开启远程调试端口的 Chrome 或 Edge。故障排查时可以手动启动独立实例：
 
 ```bash
-& "C:\Program Files\Google\Chrome\Application\chrome.exe" --remote-debugging-port=9222
 & "C:\Program Files\Google\Chrome\Application\chrome.exe" --remote-debugging-port=9222 --user-data-dir="D:\Temp\ui-explorer-chrome" https://www.bing.com/
 ```
 
@@ -84,7 +91,7 @@ msedge --remote-debugging-port=9222
 localhost:9222
 ```
 
-连接成功后，左侧会显示可检查页面，选择页面后中间区域会展示 DOM 树和测试页面预览，右侧会展示元素属性与 Selector 面板。
+连接成功后，左侧会显示可检查页面，选择页面后中间区域会展示 DOM 树，右侧会展示元素属性与 Selector 面板。
 
 ## 常用脚本
 

@@ -27,6 +27,11 @@ import {
   type ThemeName
 } from "../../shared/ipc";
 import { isTreeNodeHighlightable } from "../components/workbenchPresentation";
+import type {
+  ChromeOpenState,
+  ChromePageSource,
+  OpenChromePageProgress
+} from "../../shared/chromeLaunch";
 
 type PanelSizes = {
   left: number;
@@ -60,6 +65,7 @@ type AppStore = {
   browserDebugEndpoints: BrowserDebugEndpoint[];
   isDiscoveringBrowserEndpoints: boolean;
   selectedTestPageId: string | null;
+  chromeOpenState: ChromeOpenState;
   browserConnection: BrowserConnectionStatus;
   browserTargets: BrowserTarget[];
   selectedBrowserTargetId: string | null;
@@ -73,6 +79,7 @@ type AppStore = {
   setPanelSize: (panel: keyof PanelSizes, width: number) => void;
   toggleRightPanelSection: (section: RightPanelSectionId) => void;
   selectTestPage: (id: string) => void;
+  openChromePage: (source: ChromePageSource, preferredEndpoint?: string) => Promise<void>;
   discoverBrowserEndpoints: () => Promise<void>;
   connectBrowser: (endpoint: string) => Promise<void>;
   monitorBrowserConnection: () => Promise<void>;
@@ -118,6 +125,7 @@ export const useAppStore = create<AppStore>()(
       browserDebugEndpoints: [],
       isDiscoveringBrowserEndpoints: false,
       selectedTestPageId: null,
+      chromeOpenState: { status: "idle" },
       browserConnection: { state: "idle" },
       browserTargets: [],
       selectedBrowserTargetId: null,
@@ -144,6 +152,60 @@ export const useAppStore = create<AppStore>()(
           }
         })),
       selectTestPage: (id) => set({ selectedTestPageId: id }),
+      openChromePage: async (source, preferredEndpoint) => {
+        const requestId = crypto.randomUUID();
+        set({ chromeOpenState: { status: "detecting", requestId } });
+        const api = getApi();
+        const unsubscribe = api.onOpenChromePageProgress((progress) => {
+          set((state) => ({
+            chromeOpenState: reduceChromeOpenProgress(
+              state.chromeOpenState,
+              progress
+            )
+          }));
+        });
+        try {
+          const result = await api.openChromePage({
+            requestId,
+            preferredEndpoint,
+            source
+          });
+          if (result.status === "opened") {
+            setConnectionInfo(set, result.connection, result.snapshot);
+            set({
+              chromeOpenState: {
+                status: "success",
+                requestId,
+                endpoint: result.endpoint,
+                targetId: result.targetId,
+                ownership: result.ownership
+              }
+            });
+          } else if (result.status === "cancelled") {
+            set({ chromeOpenState: { status: "idle" } });
+          } else {
+            set({
+              chromeOpenState: {
+                status: "error",
+                requestId,
+                code: result.code,
+                message: result.message
+              }
+            });
+          }
+        } catch (error) {
+          set({
+            chromeOpenState: {
+              status: "error",
+              requestId,
+              code: "launch-failed",
+              message: error instanceof Error ? error.message : String(error)
+            }
+          });
+        } finally {
+          unsubscribe();
+        }
+      },
       discoverBrowserEndpoints: async () => {
         set({ isDiscoveringBrowserEndpoints: true });
         try {
@@ -473,6 +535,12 @@ function getApi(): IpcApi {
       electron: "not-loaded"
     }),
     listTestPages: async () => TEST_PAGES,
+    openChromePage: async () => ({
+      status: "error",
+      code: "launch-failed",
+      message: "Managed Chrome launch is available only in the Electron app."
+    }),
+    onOpenChromePageProgress: () => () => undefined,
     discoverBrowserEndpoints: async () => [],
     connectBrowser: async () => {
       throw new Error("Electron IPC is not available. Please run UI Explorer with npm.cmd run dev.");
@@ -533,6 +601,20 @@ function setConnectionInfo(
     selectedElementId: snapshot.root?.id ?? null,
     selectionRecovery: null
   }));
+}
+
+export function reduceChromeOpenProgress(
+  state: ChromeOpenState,
+  progress: OpenChromePageProgress
+): ChromeOpenState {
+  if (!("requestId" in state) || state.requestId !== progress.requestId) {
+    return state;
+  }
+  return {
+    status: progress.stage,
+    requestId: progress.requestId,
+    ...(progress.endpoint ? { endpoint: progress.endpoint } : {})
+  };
 }
 
 export type { ElementSnapshot };
