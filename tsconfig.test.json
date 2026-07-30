@@ -10,6 +10,8 @@
     "src/main/browserScripts.test.ts",
     "src/main/browserDiscovery.ts",
     "src/main/browserDiscovery.test.ts",
+    "src/main/chromeExecutable.ts",
+    "src/main/chromeExecutable.test.ts",
     "src/main/cdpConnection.ts",
     "src/main/cdpConnection.test.ts",
     "src/main/webContextRegistry.ts",
