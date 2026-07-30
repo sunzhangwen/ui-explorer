@@ -28,6 +28,13 @@ test("stitchSessionSnapshots replaces an OOPIF placeholder with a namespaced chi
     width: 20,
     height: 10
   });
+  assert.deepEqual(childButton?.layout, {
+    display: "grid",
+    flexDirection: "row",
+    gridTemplateColumns: "100px 100px",
+    rowGap: "4px",
+    columnGap: "8px"
+  });
   assert.equal(
     flattenElementSnapshot(result.root).some((node) =>
       node.diagnostic?.code === "cross-origin-frame"
@@ -197,6 +204,13 @@ function childSessionSnapshot(): SessionSnapshot {
     context: [],
     visible: true,
     boundingBox: { x: 5, y: 7, width: 20, height: 10 },
+    layout: {
+      display: "grid",
+      flexDirection: "row",
+      gridTemplateColumns: "100px 100px",
+      rowGap: "4px",
+      columnGap: "8px"
+    },
     attributes: { "data-testid": "oopif-action" },
     childIds: [],
     children: []

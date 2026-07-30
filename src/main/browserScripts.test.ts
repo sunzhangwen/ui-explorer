@@ -132,6 +132,76 @@ function normalizeVmValue<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
 
+test("snapshot script serializes computed layout metadata", () => {
+  const style = {
+    display: "grid",
+    flexDirection: "row",
+    gridTemplateColumns: "100px 100px",
+    rowGap: "4px",
+    columnGap: "8px",
+    visibility: "visible",
+    opacity: "1"
+  };
+  const element = {
+    nodeType: 1,
+    nodeName: "DIV",
+    tagName: "DIV",
+    attributes: [],
+    childNodes: [],
+    labels: [],
+    onclick: null,
+    tabIndex: -1,
+    textContent: "",
+    getAttribute: () => null,
+    hasAttribute: () => false,
+    matches: () => false,
+    contains: () => false,
+    getBoundingClientRect: () => ({
+      x: 10,
+      y: 20,
+      left: 10,
+      top: 20,
+      width: 200,
+      height: 100
+    })
+  } as Record<string, unknown>;
+  const document = {
+    nodeType: 9,
+    defaultView: {
+      getComputedStyle: () => style,
+      innerWidth: 1024,
+      innerHeight: 768
+    },
+    documentElement: element,
+    getElementById: () => null,
+    elementFromPoint: () => element
+  } as Record<string, unknown>;
+  element.ownerDocument = document;
+  element.getRootNode = () => document;
+
+  const result = runInNewContext(SNAPSHOT_SCRIPT, {
+    Node: {
+      ELEMENT_NODE: 1,
+      TEXT_NODE: 3,
+      DOCUMENT_NODE: 9,
+      DOCUMENT_FRAGMENT_NODE: 11
+    },
+    document,
+    window: {
+      innerWidth: 1024,
+      innerHeight: 768
+    }
+  }) as { root?: { layout?: unknown } };
+
+  assert.deepEqual(normalizeVmValue(result.root?.layout), {
+    display: "grid",
+    flexDirection: "row",
+    gridTemplateColumns: "100px 100px",
+    rowGap: "4px",
+    columnGap: "8px"
+  });
+});
+
 test("snapshot script records frame and shadow context boundaries", () => {
   assert.match(SNAPSHOT_SCRIPT, /kind:\s*"frame"/);
   assert.match(SNAPSHOT_SCRIPT, /kind:\s*"shadow"/);

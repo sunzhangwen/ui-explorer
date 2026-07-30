@@ -43,6 +43,14 @@ export type BoundingBox = {
   height: number;
 };
 
+export type ElementLayoutSnapshot = {
+  display: string;
+  flexDirection: string;
+  gridTemplateColumns: string;
+  rowGap: string;
+  columnGap: string;
+};
+
 export type ElementNodeKind = "element" | "page" | "frame" | "shadow" | "diagnostic";
 export type ContextBoundaryKind = "frame" | "shadow";
 export type SnapshotDiagnosticCode =
@@ -117,6 +125,7 @@ export type ElementSnapshot = {
   occluded?: boolean;
   visibilityReasons?: string[];
   boundingBox?: BoundingBox;
+  layout?: ElementLayoutSnapshot;
   kind?: ElementNodeKind;
   context?: ContextBoundary[];
   diagnostic?: SnapshotDiagnostic;

@@ -33,16 +33,33 @@
 - Produces: `ElementLayoutSnapshot` and optional `ElementSnapshot.layout`.
 - Consumes: existing `SNAPSHOT_SCRIPT`, `ElementSnapshot`, and multi-session namespacing.
 
-- [ ] **Step 1: Write failing snapshot tests**
+- [x] **Step 1: Write failing snapshot tests**
 
-Add assertions that the snapshot script reads these exact computed-style properties:
+Execute `SNAPSHOT_SCRIPT` in the existing VM harness with one controlled element whose
+`getComputedStyle` result is:
 
 ```ts
-assert.match(SNAPSHOT_SCRIPT, /display: style\.display/);
-assert.match(SNAPSHOT_SCRIPT, /flexDirection: style\.flexDirection/);
-assert.match(SNAPSHOT_SCRIPT, /gridTemplateColumns: style\.gridTemplateColumns/);
-assert.match(SNAPSHOT_SCRIPT, /rowGap: style\.rowGap/);
-assert.match(SNAPSHOT_SCRIPT, /columnGap: style\.columnGap/);
+{
+  display: "grid",
+  flexDirection: "row",
+  gridTemplateColumns: "100px 100px",
+  rowGap: "4px",
+  columnGap: "8px",
+  visibility: "visible",
+  opacity: "1"
+}
+```
+
+Assert the observable snapshot result:
+
+```ts
+assert.deepEqual(normalizeVmValue(result.root?.layout), {
+  display: "grid",
+  flexDirection: "row",
+  gridTemplateColumns: "100px 100px",
+  rowGap: "4px",
+  columnGap: "8px"
+});
 ```
 
 Extend the multi-session fixture with:
@@ -59,7 +76,7 @@ layout: {
 
 and assert that the namespaced stitched node retains the same object.
 
-- [ ] **Step 2: Run the focused tests and verify RED**
+- [x] **Step 2: Run the focused tests and verify RED**
 
 Run:
 
@@ -69,7 +86,7 @@ npm test -- --test-name-pattern="layout metadata"
 
 Expected: FAIL because `ElementSnapshot.layout` and script serialization do not exist.
 
-- [ ] **Step 3: Add the layout contract and serialization**
+- [x] **Step 3: Add the layout contract and serialization**
 
 Add:
 
@@ -85,7 +102,7 @@ export type ElementLayoutSnapshot = {
 
 Add `layout?: ElementLayoutSnapshot` to `ElementSnapshot`. In `SNAPSHOT_SCRIPT`, reuse `getComputedStyle` through a `layoutFor(element)` helper and assign `layout` to element nodes only.
 
-- [ ] **Step 4: Run focused tests and verify GREEN**
+- [x] **Step 4: Run focused tests and verify GREEN**
 
 Run:
 
@@ -95,7 +112,7 @@ npm test -- --test-name-pattern="layout metadata"
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add src/shared/ipc.ts src/main/browserScripts.ts src/main/browserScripts.test.ts src/main/multiSessionSnapshot.test.ts
@@ -695,4 +712,3 @@ Expected: Phase 7 is consistently completed and no stale planned marker remains.
 git add REQUIREMENTS.md
 git commit -m "docs: mark Phase 7 complete"
 ```
-

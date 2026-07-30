@@ -95,6 +95,20 @@ export const SNAPSHOT_SCRIPT = `(() => {
     const rect = element.getBoundingClientRect();
     return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
   };
+  const layoutFor = (element) => {
+    if (!isElement(element)) {
+      return undefined;
+    }
+    const view = element.ownerDocument?.defaultView || window;
+    const style = view.getComputedStyle(element);
+    return {
+      display: style.display,
+      flexDirection: style.flexDirection,
+      gridTemplateColumns: style.gridTemplateColumns,
+      rowGap: style.rowGap,
+      columnGap: style.columnGap
+    };
+  };
   const textFor = (node) => {
     if (!isElement(node)) {
       return node.nodeValue?.trim().slice(0, 160) || "";
@@ -184,6 +198,7 @@ export const SNAPSHOT_SCRIPT = `(() => {
       occluded: visibility.occluded,
       visibilityReasons: visibility.visibilityReasons,
       boundingBox: isElement(node) ? boxFor(node) : undefined,
+      layout: isElement(node) ? layoutFor(node) : undefined,
       kind,
       context: copyContext(context),
       attributes: isElement(node) ? readAttributes(node) : {},
