@@ -10,7 +10,11 @@ function table(headers: string[], rows: string[][]): ExtractedTable {
     headerDepth: 1,
     headers,
     rows,
-    records: rows.map((row) => Object.fromEntries(headers.map((header, index) => [header, row[index] ?? ""])))
+    records: rows.map((row) => Object.fromEntries(headers.map((header, index) => [header, row[index] ?? ""]))),
+    sourceKind: "html",
+    confidence: 100,
+    confidenceLevel: "high",
+    diagnostics: []
   };
 }
 

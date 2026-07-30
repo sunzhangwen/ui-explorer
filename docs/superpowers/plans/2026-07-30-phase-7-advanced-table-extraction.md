@@ -134,7 +134,7 @@ git commit -m "feat: capture table layout metadata"
 - Consumes: `ElementSnapshot.layout`, `ElementSnapshot.boundingBox`, roles, text, and context boundaries.
 - Produces: `extractPseudoTableForSelection(root, selectedId)` and the enriched canonical `ExtractedTable`.
 
-- [ ] **Step 1: Enrich existing HTML expectations**
+- [x] **Step 1: Enrich existing HTML expectations**
 
 Update HTML table fixtures to expect:
 
@@ -149,7 +149,7 @@ Update HTML table fixtures to expect:
 
 Run `npm test -- --test-name-pattern="expands grouped headers"` and verify it fails before adding the fields.
 
-- [ ] **Step 2: Define the canonical recognition types**
+- [x] **Step 2: Define the canonical recognition types**
 
 Add to `tableExtraction.ts`:
 
@@ -167,7 +167,7 @@ export type TableDiagnostic = {
 
 Extend `ExtractedTable` with these fields and emit the HTML defaults.
 
-- [ ] **Step 3: Write failing pseudo-table tests**
+- [x] **Step 3: Write failing pseudo-table tests**
 
 Build snapshot fixtures for:
 
@@ -189,7 +189,7 @@ Assert:
 - selection cannot climb past a `page`, `frame`, or `shadow` boundary;
 - missing header evidence produces `Column 1` and keeps the first row as data.
 
-- [ ] **Step 4: Run pseudo-table tests and verify RED**
+- [x] **Step 4: Run pseudo-table tests and verify RED**
 
 Run:
 
@@ -199,7 +199,7 @@ npm test -- --test-name-pattern="pseudo table|Grid|Flex|false positive"
 
 Expected: FAIL because the recognizer is absent.
 
-- [ ] **Step 5: Implement candidate construction and scoring**
+- [x] **Step 5: Implement candidate construction and scoring**
 
 Create:
 
@@ -228,11 +228,11 @@ Implement supported direct-Grid, wrapped-Grid, and Flex-row shapes. Use stable d
 
 Clamp scores and reject candidates below 35.
 
-- [ ] **Step 6: Route the public extraction entry point**
+- [x] **Step 6: Route the public extraction entry point**
 
 Make `extractTableForSelection` return the nearest HTML table first and otherwise call `extractPseudoTableForSelection`.
 
-- [ ] **Step 7: Run focused and Phase 4 regression tests**
+- [x] **Step 7: Run focused and Phase 4 regression tests**
 
 Run:
 
@@ -242,7 +242,7 @@ npm test -- --test-name-pattern="table|Grid|Flex"
 
 Expected: PASS, including existing merged-cell and nested-table tests.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```powershell
 git add src/shared/tableExtraction.ts src/shared/tableExtraction.test.ts src/shared/pseudoTableExtraction.ts src/shared/pseudoTableExtraction.test.ts tsconfig.test.json

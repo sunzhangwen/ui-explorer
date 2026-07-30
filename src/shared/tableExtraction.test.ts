@@ -78,6 +78,22 @@ function tableFixture(): ElementSnapshot {
 test("expands grouped headers and merged body cells", () => {
   const result = extractTableForSelection(tableFixture(), "migration");
 
+  assert.deepEqual(
+    result
+      ? {
+          sourceKind: result.sourceKind,
+          confidence: result.confidence,
+          confidenceLevel: result.confidenceLevel,
+          diagnostics: result.diagnostics
+        }
+      : null,
+    {
+      sourceKind: "html",
+      confidence: 100,
+      confidenceLevel: "high",
+      diagnostics: []
+    }
+  );
   assert.deepEqual(result?.headers, [
     "Team",
     "Q1 / Selectors",
@@ -168,6 +184,21 @@ test("collects text from non-table descendants in DOM order", () => {
 
 test("returns null when the selected element is outside a table", () => {
   assert.equal(extractTableForSelection(element("root", "main"), "root"), null);
+});
+
+test("does not resolve an outer HTML table across a frame boundary", () => {
+  const target = element("frame-target", "span", [], { text: "Inside frame" });
+  const frameRoot = element("frame-root", "html", [target]);
+  frameRoot.kind = "frame";
+  const outer = element("outer-table", "table", [
+    element("outer-row", "tr", [
+      cell("outer-cell", "td", "", {}, [frameRoot])
+    ])
+  ]);
+  const root = element("page", "html", [outer]);
+  root.kind = "page";
+
+  assert.equal(extractTableForSelection(root, target.id), null);
 });
 
 function findById(root: ElementSnapshot, id: string): ElementSnapshot | null {

@@ -248,7 +248,11 @@ test("summarizes extracted table dimensions and header depth", () => {
     records: [
       { Team: "Payments", Q1: "1", Q2: "2" },
       { Team: "Identity", Q1: "3", Q2: "4" }
-    ]
+    ],
+    sourceKind: "html",
+    confidence: 100,
+    confidenceLevel: "high",
+    diagnostics: []
   };
 
   assert.deepEqual(getTableSummary(table), { columns: 3, rows: 2, headerDepth: 2 });

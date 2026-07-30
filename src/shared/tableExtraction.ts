@@ -1,4 +1,16 @@
 import type { ElementSnapshot } from "./ipc.js";
+import { extractPseudoTableForSelection } from "./pseudoTableExtraction.js";
+
+export type TableSourceKind = "html" | "css-grid" | "flex";
+export type TableConfidenceLevel = "high" | "medium" | "low";
+
+export type TableDiagnostic = {
+  code: string;
+  kind: "evidence" | "warning";
+  messageKey: string;
+  detail: string;
+  scoreDelta: number;
+};
 
 export type ExtractedTable = {
   tableId: string;
@@ -7,6 +19,10 @@ export type ExtractedTable = {
   headers: string[];
   rows: string[][];
   records: Record<string, string>[];
+  sourceKind: TableSourceKind;
+  confidence: number;
+  confidenceLevel: TableConfidenceLevel;
+  diagnostics: TableDiagnostic[];
 };
 
 type RawCell = {
@@ -40,8 +56,15 @@ export function findContainingTable(
   }
 
   for (let index = path.length - 1; index >= 0; index -= 1) {
-    if (path[index]?.tagName === "table") {
-      return path[index] ?? null;
+    const node = path[index];
+    if (!node) {
+      continue;
+    }
+    if (node.kind === "page" || node.kind === "frame" || node.kind === "shadow") {
+      break;
+    }
+    if (node.tagName === "table") {
+      return node;
     }
   }
   return null;
@@ -52,7 +75,9 @@ export function extractTableForSelection(
   selectedId: string | null
 ): ExtractedTable | null {
   const table = findContainingTable(root, selectedId);
-  return table ? extractTable(table) : null;
+  return table
+    ? extractTable(table)
+    : extractPseudoTableForSelection(root, selectedId);
 }
 
 export function extractTable(table: ElementSnapshot): ExtractedTable {
@@ -81,7 +106,11 @@ export function extractTable(table: ElementSnapshot): ExtractedTable {
     rows,
     records: rows.map((row) =>
       Object.fromEntries(headers.map((header, column) => [header, row[column] ?? ""]))
-    )
+    ),
+    sourceKind: "html",
+    confidence: 100,
+    confidenceLevel: "high",
+    diagnostics: []
   };
 }
 
