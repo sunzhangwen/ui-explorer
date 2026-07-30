@@ -141,6 +141,8 @@ export type MessageKey =
   | "selector.copy"
   | "table.rows"
   | "table.columns"
+  | "table.selectedRows"
+  | "table.selectedColumns"
   | "table.headerLevels"
   | "table.empty"
   | "table.dataPreview"
@@ -148,6 +150,35 @@ export type MessageKey =
   | "table.format.csv"
   | "table.format.json"
   | "table.format.markdown"
+  | "table.format.xlsx"
+  | "table.source.html"
+  | "table.source.css-grid"
+  | "table.source.flex"
+  | "table.confidence.score"
+  | "table.confidence.high"
+  | "table.confidence.medium"
+  | "table.confidence.low"
+  | "table.confidence.warning"
+  | "table.diagnostics"
+  | "table.diagnostic.layoutPattern"
+  | "table.diagnostic.consistentColumns"
+  | "table.diagnostic.columnAlignment"
+  | "table.diagnostic.semanticRoles"
+  | "table.diagnostic.headerEvidence"
+  | "table.diagnostic.irregularColumns"
+  | "table.diagnostic.weakAlignment"
+  | "table.diagnostic.missingSemantics"
+  | "table.diagnostic.ambiguousHeader"
+  | "table.selectAll"
+  | "table.clear"
+  | "table.toggleRow"
+  | "table.toggleColumn"
+  | "table.selection.empty"
+  | "table.excel.title"
+  | "table.excel.frozenHeader"
+  | "table.excel.autoFilter"
+  | "table.excel.columnWidths"
+  | "table.excel.copyUnavailable"
   | "table.copy"
   | "table.save"
   | "table.copied"
@@ -331,6 +362,8 @@ export const messages: Record<"zh-CN" | "en-US", Record<MessageKey, string>> = {
     "selector.copy": "复制导出内容",
     "table.rows": "数据行",
     "table.columns": "列",
+    "table.selectedRows": "已选行",
+    "table.selectedColumns": "已选列",
     "table.headerLevels": "表头层级",
     "table.empty": "该表格没有可提取的数据。",
     "table.dataPreview": "数据预览",
@@ -338,6 +371,35 @@ export const messages: Record<"zh-CN" | "en-US", Record<MessageKey, string>> = {
     "table.format.csv": "CSV",
     "table.format.json": "JSON",
     "table.format.markdown": "Markdown",
+    "table.format.xlsx": "Excel",
+    "table.source.html": "HTML 表格",
+    "table.source.css-grid": "CSS Grid 伪表格",
+    "table.source.flex": "Flex 伪表格",
+    "table.confidence.score": "置信度",
+    "table.confidence.high": "高置信度",
+    "table.confidence.medium": "中置信度",
+    "table.confidence.low": "低置信度",
+    "table.confidence.warning": "该结果可能是普通布局，请核对数据范围后再导出。",
+    "table.diagnostics": "识别依据",
+    "table.diagnostic.layoutPattern": "检测到重复的表格式布局",
+    "table.diagnostic.consistentColumns": "各行列数一致",
+    "table.diagnostic.columnAlignment": "单元格列位置对齐",
+    "table.diagnostic.semanticRoles": "存在表格 ARIA 语义",
+    "table.diagnostic.headerEvidence": "首行具有明确表头语义",
+    "table.diagnostic.irregularColumns": "各行列数不一致",
+    "table.diagnostic.weakAlignment": "列位置对齐较弱",
+    "table.diagnostic.missingSemantics": "缺少表格 ARIA 语义",
+    "table.diagnostic.ambiguousHeader": "无法可靠判断表头，首行已保留为数据",
+    "table.selectAll": "全选",
+    "table.clear": "清空",
+    "table.toggleRow": "选择行",
+    "table.toggleColumn": "选择列",
+    "table.selection.empty": "请至少选择一行和一列后再导出。",
+    "table.excel.title": "Excel 工作簿预览",
+    "table.excel.frozenHeader": "冻结首行",
+    "table.excel.autoFilter": "启用自动筛选",
+    "table.excel.columnWidths": "列宽范围",
+    "table.excel.copyUnavailable": "Excel 是二进制文件，请使用保存文件。",
     "table.copy": "复制",
     "table.save": "保存文件",
     "table.copied": "已复制",
@@ -521,6 +583,8 @@ export const messages: Record<"zh-CN" | "en-US", Record<MessageKey, string>> = {
     "selector.copy": "Copy export",
     "table.rows": "Data rows",
     "table.columns": "Columns",
+    "table.selectedRows": "Selected rows",
+    "table.selectedColumns": "Selected columns",
     "table.headerLevels": "Header levels",
     "table.empty": "This table has no extractable data.",
     "table.dataPreview": "Data preview",
@@ -528,6 +592,35 @@ export const messages: Record<"zh-CN" | "en-US", Record<MessageKey, string>> = {
     "table.format.csv": "CSV",
     "table.format.json": "JSON",
     "table.format.markdown": "Markdown",
+    "table.format.xlsx": "Excel",
+    "table.source.html": "HTML table",
+    "table.source.css-grid": "CSS Grid pseudo-table",
+    "table.source.flex": "Flex pseudo-table",
+    "table.confidence.score": "Confidence",
+    "table.confidence.high": "High confidence",
+    "table.confidence.medium": "Medium confidence",
+    "table.confidence.low": "Low confidence",
+    "table.confidence.warning": "This may be a regular layout. Verify the data range before exporting.",
+    "table.diagnostics": "Recognition evidence",
+    "table.diagnostic.layoutPattern": "A repeated table-like layout was detected",
+    "table.diagnostic.consistentColumns": "Every row has a consistent column count",
+    "table.diagnostic.columnAlignment": "Cells align into stable columns",
+    "table.diagnostic.semanticRoles": "Table ARIA semantics are present",
+    "table.diagnostic.headerEvidence": "The first row has explicit header semantics",
+    "table.diagnostic.irregularColumns": "Row column counts are inconsistent",
+    "table.diagnostic.weakAlignment": "Column alignment is weak",
+    "table.diagnostic.missingSemantics": "Table ARIA semantics are missing",
+    "table.diagnostic.ambiguousHeader": "Header detection was ambiguous, so the first row remains data",
+    "table.selectAll": "Select all",
+    "table.clear": "Clear",
+    "table.toggleRow": "Toggle row",
+    "table.toggleColumn": "Toggle column",
+    "table.selection.empty": "Select at least one row and one column before exporting.",
+    "table.excel.title": "Excel workbook preview",
+    "table.excel.frozenHeader": "Freeze the header row",
+    "table.excel.autoFilter": "Enable automatic filters",
+    "table.excel.columnWidths": "Column width range",
+    "table.excel.copyUnavailable": "Excel is a binary file. Use Save file instead.",
     "table.copy": "Copy",
     "table.save": "Save file",
     "table.copied": "Copied",

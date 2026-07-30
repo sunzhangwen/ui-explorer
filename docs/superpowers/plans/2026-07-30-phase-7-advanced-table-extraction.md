@@ -470,7 +470,7 @@ git commit -m "feat: export selected tables to Excel"
 - Consumes: canonical table metadata, selection helpers, text exports, and discriminated save requests.
 - Produces: accessible selection controls, confidence diagnostics, selected-range preview, and Excel save interaction.
 
-- [ ] **Step 1: Write failing pure presentation tests**
+- [x] **Step 1: Write failing pure presentation tests**
 
 Add tests for:
 
@@ -484,7 +484,7 @@ getTableConfidenceMessageKey("low")
 
 Add an Excel summary test that reports rows, columns, frozen header, filter, and width behavior.
 
-- [ ] **Step 2: Run presentation tests and verify RED**
+- [x] **Step 2: Run presentation tests and verify RED**
 
 Run:
 
@@ -494,11 +494,11 @@ npm test -- --test-name-pattern="table selection summary|confidence|Excel summar
 
 Expected: FAIL because the helpers are absent.
 
-- [ ] **Step 3: Implement pure presentation helpers**
+- [x] **Step 3: Implement pure presentation helpers**
 
 Return plain data and `MessageKey` values only; do not embed translated strings in business logic.
 
-- [ ] **Step 4: Wire local selection state**
+- [x] **Step 4: Wire local selection state**
 
 In `TableDataPanel`:
 
@@ -512,11 +512,11 @@ const selectedTable = useMemo(
 
 Reset on the component key formed from snapshot capture time and `tableId`. Use source indexes for checkboxes and all/clear actions.
 
-- [ ] **Step 5: Render confidence and diagnostic evidence**
+- [x] **Step 5: Render confidence and diagnostic evidence**
 
 Show source type and confidence for pseudo tables. Render every diagnostic with its translated message key, signed score delta, and technical detail. Apply warning styling to medium/low results.
 
-- [ ] **Step 6: Render row and column controls**
+- [x] **Step 6: Render row and column controls**
 
 Add:
 
@@ -529,7 +529,7 @@ Add:
 
 Keep row virtualization based on the source table.
 
-- [ ] **Step 7: Render selected text and Excel previews**
+- [x] **Step 7: Render selected text and Excel previews**
 
 Build CSV/JSON/Markdown from `selectedTable`. For `xlsx`, show the workbook summary instead of Monaco, hide/disable copy, and send:
 
@@ -547,11 +547,11 @@ Build CSV/JSON/Markdown from `selectedTable`. For `xlsx`, show the workbook summ
 
 Disable copy/save and show `table.selection.empty` if either dimension is empty.
 
-- [ ] **Step 8: Add complete translated copy and token-based CSS**
+- [x] **Step 8: Add complete translated copy and token-based CSS**
 
 Add matching Chinese and English keys for source labels, confidence levels, selection actions, diagnostics, empty range, and workbook summary. Use existing semantic color variables and density behavior.
 
-- [ ] **Step 9: Run tests, typecheck, and build**
+- [x] **Step 9: Run tests, typecheck, and build**
 
 Run:
 
@@ -563,7 +563,7 @@ npm run build
 
 Expected: PASS.
 
-- [ ] **Step 10: Commit**
+- [x] **Step 10: Commit**
 
 ```powershell
 git add src/renderer/components/WorkbenchLayout.tsx src/renderer/components/workbenchPresentation.ts src/renderer/components/workbenchPresentation.test.ts src/renderer/i18n/messages.ts src/renderer/styles/global.css src/renderer/store/useAppStore.ts

@@ -13,6 +13,7 @@ import {
   Database,
   Download,
   FileJson,
+  FileSpreadsheet,
   Gauge,
   Globe2,
   Languages,
@@ -54,10 +55,15 @@ import {
 } from "../../shared/selector";
 import {
   buildAllTableExports,
-  TABLE_TEXT_EXPORT_FORMATS,
-  type TableTextExportFormat
+  TABLE_EXPORT_FORMATS,
+  type TableExportFormat
 } from "../../shared/tableExport";
 import { extractTableForSelection, type ExtractedTable } from "../../shared/tableExtraction";
+import {
+  applyTableSelection,
+  createFullTableSelection,
+  type TableSelection
+} from "../../shared/tableSelection";
 import { useI18n } from "../i18n/I18nProvider";
 import type { MessageKey } from "../i18n/messages";
 import { useAppStore } from "../store/useAppStore";
@@ -67,7 +73,10 @@ import {
   getContextPathLabels,
   getDiagnosticPresentation,
   getSelectorLayerMessageKey,
+  getTableConfidenceMessageKey,
+  getTableSelectionSummary,
   getTableSummary,
+  getTableWorkbookSummary,
   getTreeNodeBadgeMessageKey,
   getTreeNodePresentationKind,
   getVirtualTableWindow,
@@ -948,14 +957,24 @@ function TableDataPanel({
   theme: "light" | "dark";
 }): JSX.Element {
   const { t } = useI18n();
-  const [format, setFormat] = useState<TableTextExportFormat>("csv");
+  const [format, setFormat] = useState<TableExportFormat>("csv");
+  const [selection, setSelection] = useState<TableSelection>(() =>
+    createFullTableSelection(table)
+  );
   const [scrollTop, setScrollTop] = useState(0);
   const [feedback, setFeedback] = useState<{
     kind: "copied" | "copy-error" | "saved" | "cancelled" | "save-error";
     detail?: string;
   } | null>(null);
-  const exports = useMemo(() => buildAllTableExports(table), [table]);
-  const summary = getTableSummary(table);
+  const selectedTable = useMemo(
+    () => applyTableSelection(table, selection),
+    [selection, table]
+  );
+  const exports = useMemo(() => buildAllTableExports(selectedTable), [selectedTable]);
+  const selectionSummary = getTableSelectionSummary(table, selection);
+  const workbookSummary = getTableWorkbookSummary(selectedTable);
+  const emptySelection =
+    selectedTable.headers.length === 0 || selectedTable.rows.length === 0;
   const virtualWindow = getVirtualTableWindow(
     table.rows.length,
     Math.max(0, scrollTop - TABLE_ROW_HEIGHT),
@@ -964,21 +983,28 @@ function TableDataPanel({
     TABLE_OVERSCAN
   );
   const visibleRows = table.rows.slice(virtualWindow.startIndex, virtualWindow.endIndex);
-  const gridWidth = Math.max(320, table.headers.length * 140);
-  const gridTemplateColumns = `repeat(${Math.max(1, table.headers.length)}, minmax(120px, 1fr))`;
-  const preview = exports[format];
+  const gridWidth = Math.max(360, 42 + table.headers.length * 140);
+  const gridTemplateColumns = `42px repeat(${Math.max(1, table.headers.length)}, minmax(120px, 1fr))`;
+  const preview = format === "xlsx" ? "" : exports[format];
+  const selectedRowIndexes = new Set(selection.rowIndexes);
+  const selectedColumnIndexes = new Set(selection.columnIndexes);
+  const suggestedBaseName = table.caption || `table-${table.tableId}`;
 
   useEffect(() => {
     setFormat("csv");
+    setSelection(createFullTableSelection(table));
     setScrollTop(0);
     setFeedback(null);
   }, [table.tableId]);
 
   useEffect(() => {
     setFeedback(null);
-  }, [format]);
+  }, [format, selection]);
 
   const copyTableExport = async () => {
+    if (format === "xlsx" || emptySelection) {
+      return;
+    }
     try {
       if (!navigator.clipboard) {
         throw new Error("Clipboard API is unavailable.");
@@ -994,13 +1020,28 @@ function TableDataPanel({
   };
 
   const saveTable = async () => {
+    if (emptySelection) {
+      return;
+    }
     let result: TableExportSaveResult;
     try {
-      result = await onSave({
-        format,
-        content: preview,
-        suggestedBaseName: table.caption || `table-${table.tableId}`
-      });
+      const request: TableExportSaveRequest =
+        format === "xlsx"
+          ? {
+              format,
+              table: {
+                caption: selectedTable.caption,
+                headers: selectedTable.headers,
+                rows: selectedTable.rows
+              },
+              suggestedBaseName
+            }
+          : {
+              format,
+              content: preview,
+              suggestedBaseName
+            };
+      result = await onSave(request);
     } catch (error) {
       setFeedback({
         kind: "save-error",
@@ -1025,25 +1066,143 @@ function TableDataPanel({
     }
   };
 
-  if (!summary || table.headers.length === 0) {
+  const setAllRows = (selected: boolean) => {
+    setSelection((current) => ({
+      ...current,
+      rowIndexes: selected ? table.rows.map((_row, index) => index) : []
+    }));
+  };
+
+  const setAllColumns = (selected: boolean) => {
+    setSelection((current) => ({
+      ...current,
+      columnIndexes: selected
+        ? table.headers.map((_header, index) => index)
+        : []
+    }));
+  };
+
+  const toggleSelectionIndex = (
+    dimension: "rowIndexes" | "columnIndexes",
+    index: number,
+    checked: boolean
+  ) => {
+    setSelection((current) => {
+      const indexes = new Set(current[dimension]);
+      if (checked) {
+        indexes.add(index);
+      } else {
+        indexes.delete(index);
+      }
+      return { ...current, [dimension]: Array.from(indexes) };
+    });
+  };
+
+  if (table.headers.length === 0) {
     return <p className="empty-copy">{t("table.empty")}</p>;
   }
 
   return (
     <div className="table-data-panel">
-      <div className="table-metrics">
-        <Metric label={t("table.rows")} value={String(summary.rows)} />
-        <Metric label={t("table.columns")} value={String(summary.columns)} />
-        <Metric label={t("table.headerLevels")} value={String(summary.headerDepth)} />
+      <div className="table-source-line">
+        <span className="table-source-badge">
+          {t(`table.source.${table.sourceKind}` as MessageKey)}
+        </span>
+        {table.sourceKind !== "html" ? (
+          <span className="table-confidence-badge" data-level={table.confidenceLevel}>
+            {t(getTableConfidenceMessageKey(table.confidenceLevel) as MessageKey)}
+            <strong>{table.confidence}</strong>
+          </span>
+        ) : null}
       </div>
+
+      <div className="table-metrics">
+        <Metric
+          label={t("table.selectedRows")}
+          value={`${selectionSummary.selectedRows}/${selectionSummary.totalRows}`}
+        />
+        <Metric
+          label={t("table.selectedColumns")}
+          value={`${selectionSummary.selectedColumns}/${selectionSummary.totalColumns}`}
+        />
+        <Metric label={t("table.headerLevels")} value={String(table.headerDepth)} />
+        <Metric label={t("table.confidence.score")} value={String(table.confidence)} />
+      </div>
+
+      {table.sourceKind !== "html" ? (
+        <section className="table-confidence-panel" data-level={table.confidenceLevel}>
+          <h3>{t("table.diagnostics")}</h3>
+          {table.confidenceLevel === "low" ? (
+            <p className="table-confidence-warning">
+              <AlertTriangle size={13} />
+              {t("table.confidence.warning")}
+            </p>
+          ) : null}
+          <ul>
+            {table.diagnostics.map((diagnostic) => (
+              <li key={diagnostic.code} data-kind={diagnostic.kind}>
+                <span>{t(diagnostic.messageKey as MessageKey)}</span>
+                <small>{diagnostic.detail}</small>
+                <strong>
+                  {diagnostic.scoreDelta > 0 ? "+" : ""}
+                  {diagnostic.scoreDelta}
+                </strong>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
 
       <section className="table-preview-card">
         <h3>{t("table.dataPreview")}</h3>
+        <div className="table-selection-toolbar">
+          <span>
+            <strong>{t("table.selectedRows")}</strong>
+            <button type="button" onClick={() => setAllRows(true)}>
+              {t("table.selectAll")}
+            </button>
+            <button type="button" onClick={() => setAllRows(false)}>
+              {t("table.clear")}
+            </button>
+          </span>
+          <span>
+            <strong>{t("table.selectedColumns")}</strong>
+            <button type="button" onClick={() => setAllColumns(true)}>
+              {t("table.selectAll")}
+            </button>
+            <button type="button" onClick={() => setAllColumns(false)}>
+              {t("table.clear")}
+            </button>
+          </span>
+        </div>
         <div className="table-data-grid" onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}>
           <div className="table-grid-content" style={{ width: gridWidth }}>
             <div className="table-data-header" style={{ gridTemplateColumns }}>
-              {table.headers.map((header) => (
-                <strong key={header} title={header}>{header}</strong>
+              <span className="table-row-selector" aria-hidden="true">#</span>
+              {table.headers.map((header, column) => (
+                <label
+                  className={
+                    selectedColumnIndexes.has(column)
+                      ? "table-column-selector"
+                      : "table-column-selector excluded"
+                  }
+                  key={`${header}-${column}`}
+                  title={header}
+                >
+                  <input
+                    type="checkbox"
+                    checked={selectedColumnIndexes.has(column)}
+                    aria-label={`${t("table.toggleColumn")} ${header}`}
+                    onChange={(event) =>
+                      toggleSelectionIndex(
+                        "columnIndexes",
+                        column,
+                        event.currentTarget.checked
+                      )
+                    }
+                  />
+                  <strong>{header}</strong>
+                </label>
               ))}
             </div>
             <div className="table-data-body" style={{ height: table.rows.length * TABLE_ROW_HEIGHT }}>
@@ -1051,15 +1210,39 @@ function TableDataPanel({
                 const rowIndex = virtualWindow.startIndex + visibleIndex;
                 return (
                   <div
-                    className="table-data-row"
+                    className={
+                      selectedRowIndexes.has(rowIndex)
+                        ? "table-data-row"
+                        : "table-data-row excluded"
+                    }
                     key={rowIndex}
                     style={{
                       gridTemplateColumns,
                       transform: `translateY(${rowIndex * TABLE_ROW_HEIGHT}px)`
                     }}
                   >
+                    <label className="table-row-selector">
+                      <input
+                        type="checkbox"
+                        checked={selectedRowIndexes.has(rowIndex)}
+                        aria-label={`${t("table.toggleRow")} ${rowIndex + 1}`}
+                        onChange={(event) =>
+                          toggleSelectionIndex(
+                            "rowIndexes",
+                            rowIndex,
+                            event.currentTarget.checked
+                          )
+                        }
+                      />
+                    </label>
                     {table.headers.map((header, column) => (
-                      <span key={`${header}-${column}`} title={row[column] ?? ""}>{row[column] ?? ""}</span>
+                      <span
+                        className={selectedColumnIndexes.has(column) ? "" : "excluded"}
+                        key={`${header}-${column}`}
+                        title={row[column] ?? ""}
+                      >
+                        {row[column] ?? ""}
+                      </span>
                     ))}
                   </div>
                 );
@@ -1074,41 +1257,77 @@ function TableDataPanel({
           <Code2 size={14} />
           {t("table.exportPreview")}
           <div className="editor-tabs" role="tablist" aria-label={t("table.exportPreview")}>
-            {TABLE_TEXT_EXPORT_FORMATS.map((candidate) => (
+            {TABLE_EXPORT_FORMATS.map((candidate) => (
               <button
                 type="button"
                 key={candidate}
                 className={candidate === format ? "selected" : ""}
                 onClick={() => setFormat(candidate)}
               >
-                {t(`table.format.${candidate}`)}
+                {t(`table.format.${candidate}` as MessageKey)}
               </button>
             ))}
           </div>
         </div>
-        <Editor
-          height="170px"
-          language={format === "json" ? "json" : format === "markdown" ? "markdown" : "plaintext"}
-          value={preview}
-          options={{
-            readOnly: true,
-            minimap: { enabled: false },
-            scrollBeyondLastLine: false,
-            fontSize: 12,
-            lineNumbers: "off",
-            folding: false,
-            renderLineHighlight: "none"
-          }}
-          theme={theme === "dark" ? "vs-dark" : "light"}
-        />
+        {emptySelection ? (
+          <p className="empty-copy table-selection-empty">
+            {t("table.selection.empty")}
+          </p>
+        ) : format === "xlsx" ? (
+          <div className="table-workbook-summary">
+            <FileSpreadsheet size={28} />
+            <div>
+              <h3>{t("table.excel.title")}</h3>
+              <p>
+                {workbookSummary.rows} {t("table.rows")} ·{" "}
+                {workbookSummary.columns} {t("table.columns")}
+              </p>
+            </div>
+            <ul>
+              <li>{t("table.excel.frozenHeader")}</li>
+              <li>{t("table.excel.autoFilter")}</li>
+              <li>
+                {t("table.excel.columnWidths")}{" "}
+                {workbookSummary.minimumColumnWidth}–
+                {workbookSummary.maximumColumnWidth}
+              </li>
+            </ul>
+          </div>
+        ) : (
+          <Editor
+            height="170px"
+            language={format === "json" ? "json" : format === "markdown" ? "markdown" : "plaintext"}
+            value={preview}
+            options={{
+              readOnly: true,
+              minimap: { enabled: false },
+              scrollBeyondLastLine: false,
+              fontSize: 12,
+              lineNumbers: "off",
+              folding: false,
+              renderLineHighlight: "none"
+            }}
+            theme={theme === "dark" ? "vs-dark" : "light"}
+          />
+        )}
       </section>
 
       <div className="table-export-actions">
-        <button type="button" onClick={() => void copyTableExport()}>
+        <button
+          type="button"
+          disabled={emptySelection || format === "xlsx"}
+          title={format === "xlsx" ? t("table.excel.copyUnavailable") : undefined}
+          onClick={() => void copyTableExport()}
+        >
           <Copy size={13} />
           {t("table.copy")}
         </button>
-        <button type="button" className="primary" onClick={() => void saveTable()}>
+        <button
+          type="button"
+          className="primary"
+          disabled={emptySelection}
+          onClick={() => void saveTable()}
+        >
           <Download size={13} />
           {t("table.save")}
         </button>

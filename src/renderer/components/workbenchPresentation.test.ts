@@ -9,7 +9,10 @@ import {
   getContextPathLabels,
   getDiagnosticPresentation,
   getSelectorLayerMessageKey,
+  getTableConfidenceMessageKey,
+  getTableSelectionSummary,
   getTableSummary,
+  getTableWorkbookSummary,
   getVirtualTableWindow,
   getTreeNodeBadgeMessageKey,
   getTreeNodePresentationKind,
@@ -260,6 +263,88 @@ test("summarizes extracted table dimensions and header depth", () => {
 
 test("returns no table summary without a selected table", () => {
   assert.equal(getTableSummary(null), null);
+});
+
+test("summarizes selected rows and columns against the source table", () => {
+  const source: ExtractedTable = {
+    tableId: "metrics",
+    caption: "Metrics",
+    headerDepth: 1,
+    headers: ["Team", "Q1", "Q2"],
+    rows: [["Payments", "1", "2"], ["Identity", "3", "4"]],
+    records: [
+      { Team: "Payments", Q1: "1", Q2: "2" },
+      { Team: "Identity", Q1: "3", Q2: "4" }
+    ],
+    sourceKind: "css-grid",
+    confidence: 72,
+    confidenceLevel: "medium",
+    diagnostics: []
+  };
+  assert.deepEqual(getTableSelectionSummary(source, {
+    rowIndexes: [1],
+    columnIndexes: [0, 2]
+  }), {
+    selectedRows: 1,
+    totalRows: 2,
+    selectedColumns: 2,
+    totalColumns: 3
+  });
+});
+
+test("selection summary keeps selected row counts when every column is cleared", () => {
+  const source: ExtractedTable = {
+    tableId: "metrics",
+    caption: null,
+    headerDepth: 1,
+    headers: ["Team", "Q1"],
+    rows: [["Payments", "1"], ["Identity", "3"]],
+    records: [{ Team: "Payments", Q1: "1" }, { Team: "Identity", Q1: "3" }],
+    sourceKind: "html",
+    confidence: 100,
+    confidenceLevel: "high",
+    diagnostics: []
+  };
+
+  assert.deepEqual(getTableSelectionSummary(source, {
+    rowIndexes: [1],
+    columnIndexes: []
+  }), {
+    selectedRows: 1,
+    totalRows: 2,
+    selectedColumns: 0,
+    totalColumns: 2
+  });
+});
+
+test("maps table confidence levels to localized message keys", () => {
+  assert.equal(getTableConfidenceMessageKey("high"), "table.confidence.high");
+  assert.equal(getTableConfidenceMessageKey("medium"), "table.confidence.medium");
+  assert.equal(getTableConfidenceMessageKey("low"), "table.confidence.low");
+});
+
+test("builds the Excel preview summary from the selected table", () => {
+  const selected: ExtractedTable = {
+    tableId: "metrics",
+    caption: "Metrics",
+    headerDepth: 1,
+    headers: ["Team", "Q2"],
+    rows: [["Identity", "4"]],
+    records: [{ Team: "Identity", Q2: "4" }],
+    sourceKind: "html",
+    confidence: 100,
+    confidenceLevel: "high",
+    diagnostics: []
+  };
+
+  assert.deepEqual(getTableWorkbookSummary(selected), {
+    rows: 1,
+    columns: 2,
+    frozenHeader: true,
+    autoFilter: true,
+    minimumColumnWidth: 12,
+    maximumColumnWidth: 48
+  });
 });
 
 test("computes an overscanned virtual table row window", () => {

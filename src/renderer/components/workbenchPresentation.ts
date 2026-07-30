@@ -12,7 +12,11 @@ import {
   type SelectorExports,
   type SelectorLayer
 } from "../../shared/selector.js";
-import type { ExtractedTable } from "../../shared/tableExtraction.js";
+import type {
+  ExtractedTable,
+  TableConfidenceLevel
+} from "../../shared/tableExtraction.js";
+import type { TableSelection } from "../../shared/tableSelection.js";
 import type { MessageKey } from "../i18n/messages.js";
 
 const SELECTOR_LAYER_MESSAGE_KEYS = {
@@ -124,6 +128,63 @@ export function getTableSummary(
         headerDepth: table.headerDepth
       }
     : null;
+}
+
+export function getTableSelectionSummary(
+  source: ExtractedTable,
+  selection: TableSelection
+): {
+  selectedRows: number;
+  totalRows: number;
+  selectedColumns: number;
+  totalColumns: number;
+} {
+  const selectedRows = new Set(
+    selection.rowIndexes.filter(
+      (index) => Number.isInteger(index) && index >= 0 && index < source.rows.length
+    )
+  );
+  const selectedColumns = new Set(
+    selection.columnIndexes.filter(
+      (index) =>
+        Number.isInteger(index) &&
+        index >= 0 &&
+        index < source.headers.length
+    )
+  );
+  return {
+    selectedRows: selectedRows.size,
+    totalRows: source.rows.length,
+    selectedColumns: selectedColumns.size,
+    totalColumns: source.headers.length
+  };
+}
+
+export function getTableConfidenceMessageKey(
+  level: TableConfidenceLevel
+):
+  | "table.confidence.high"
+  | "table.confidence.medium"
+  | "table.confidence.low" {
+  return `table.confidence.${level}`;
+}
+
+export function getTableWorkbookSummary(table: ExtractedTable): {
+  rows: number;
+  columns: number;
+  frozenHeader: true;
+  autoFilter: true;
+  minimumColumnWidth: 12;
+  maximumColumnWidth: 48;
+} {
+  return {
+    rows: table.rows.length,
+    columns: table.headers.length,
+    frozenHeader: true,
+    autoFilter: true,
+    minimumColumnWidth: 12,
+    maximumColumnWidth: 48
+  };
 }
 
 export function getVirtualTableWindow(
