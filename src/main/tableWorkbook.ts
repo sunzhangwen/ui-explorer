@@ -51,7 +51,9 @@ export function sanitizeWorksheetName(value: string | null): string {
     .replace(/^'+|'+$/g, "")
     .slice(0, 31)
     .trim();
-  return sanitized || "Table";
+  return !sanitized || sanitized.toLowerCase() === "history"
+    ? "Table"
+    : sanitized;
 }
 
 function displayWidth(value: string): number {

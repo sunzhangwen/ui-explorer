@@ -39,6 +39,8 @@ test("sanitizes worksheet names and applies a stable fallback", () => {
   assert.equal(sanitizeWorksheetName("  Sales:/\\?*[]  "), "Sales");
   assert.equal(sanitizeWorksheetName("[]:*?/\\"), "Table");
   assert.equal(sanitizeWorksheetName("A".repeat(40)), "A".repeat(31));
+  assert.equal(sanitizeWorksheetName("History"), "Table");
+  assert.equal(sanitizeWorksheetName("history"), "Table");
   assert.equal(sanitizeWorksheetName(null), "Table");
 });
 
