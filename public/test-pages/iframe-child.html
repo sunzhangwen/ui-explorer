@@ -16,6 +16,22 @@
         </label>
         <button type="button" aria-label="Submit payment">Pay now</button>
       </section>
+      <section>
+        <h2>Frame pseudo table</h2>
+        <div
+          class="pseudo-table-grid"
+          data-testid="iframe-pseudo-table"
+          role="table"
+          aria-label="Frame release readiness"
+        >
+          <div role="columnheader">Name</div>
+          <div role="columnheader">Status</div>
+          <div role="cell">Alpha</div>
+          <div role="cell">Ready</div>
+          <div role="cell">Beta</div>
+          <div role="cell">Blocked</div>
+        </div>
+      </section>
       <iframe title="Payment verification frame" src="./iframe-nested.html"></iframe>
     </main>
   </body>

@@ -437,7 +437,7 @@ export const messages: Record<"zh-CN" | "en-US", Record<MessageKey, string>> = {
     "testPages.dynamicList.title": "动态列表",
     "testPages.dynamicList.description": "索引变化、随机 id 和 hash class。",
     "testPages.table.title": "表格",
-    "testPages.table.description": "标准表格、合并单元格和多级表头。",
+    "testPages.table.description": "标准表格、Grid/Flex 伪表格、误判防护和大型数据集。",
     "testPages.popup.title": "弹层",
     "testPages.popup.description": "菜单、tooltip、弹层和延迟捕获样例。"
   },
@@ -658,7 +658,7 @@ export const messages: Record<"zh-CN" | "en-US", Record<MessageKey, string>> = {
     "testPages.dynamicList.title": "Dynamic list",
     "testPages.dynamicList.description": "Changing indexes, random ids, and hash classes.",
     "testPages.table.title": "Table",
-    "testPages.table.description": "Standard tables, merged cells, and grouped headers.",
+    "testPages.table.description": "Standard, Grid/Flex pseudo, false-positive, and large table fixtures.",
     "testPages.popup.title": "Popup",
     "testPages.popup.description": "Menus, tooltips, popovers, and delayed capture samples."
   }

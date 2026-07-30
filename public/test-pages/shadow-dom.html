@@ -34,12 +34,35 @@
               <style>
                 button { min-height: 36px; border: 1px solid #147876; border-radius: 6px; padding: 0 12px; background: #147876; color: white; }
                 label { display: grid; gap: 6px; }
+                .pseudo-table-grid {
+                  display: grid;
+                  grid-template-columns: minmax(120px, 1fr) minmax(120px, 1fr);
+                  margin-top: 14px;
+                  border: 1px solid #c8d0c7;
+                  border-radius: 6px;
+                  overflow: hidden;
+                }
+                .pseudo-table-grid > * { padding: 8px 10px; border-right: 1px solid #c8d0c7; border-bottom: 1px solid #c8d0c7; }
+                .pseudo-table-grid > [role="columnheader"] { background: #e8eee9; font-weight: 600; }
               </style>
               <label>
                 Shadow query
                 <input data-testid="shadow-query" aria-label="Shadow query" placeholder="inside open root" />
               </label>
               <button type="button" part="action">Shadow action</button>
+              <div
+                class="pseudo-table-grid"
+                data-testid="shadow-pseudo-table"
+                role="table"
+                aria-label="Shadow release readiness"
+              >
+                <div role="columnheader">Name</div>
+                <div role="columnheader">Status</div>
+                <div role="cell">Alpha</div>
+                <div role="cell">Ready</div>
+                <div role="cell">Beta</div>
+                <div role="cell">Blocked</div>
+              </div>
             `;
           }
         }

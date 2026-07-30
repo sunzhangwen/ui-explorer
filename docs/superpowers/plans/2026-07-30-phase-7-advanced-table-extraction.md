@@ -589,7 +589,7 @@ git commit -m "feat: add advanced table extraction controls"
 - Consumes: the completed recognizer and stitched snapshots.
 - Produces: representative manual/demo fixtures and cross-context regression evidence.
 
-- [ ] **Step 1: Add representative table fixtures**
+- [x] **Step 1: Add representative table fixtures**
 
 Add stable `data-testid` fixtures:
 
@@ -603,7 +603,7 @@ Add stable `data-testid` fixtures:
 
 Generate the large fixture deterministically with 2,000 rows and 12 columns.
 
-- [ ] **Step 2: Add equivalent contextual fixtures**
+- [x] **Step 2: Add equivalent contextual fixtures**
 
 Add a compact two-column pseudo table inside:
 
@@ -613,7 +613,7 @@ Add a compact two-column pseudo table inside:
 
 Use the same headers and rows so extracted results can be compared directly.
 
-- [ ] **Step 3: Add cross-context regression tests**
+- [x] **Step 3: Add cross-context regression tests**
 
 Construct namespaced page/frame/shadow session snapshots and assert that selecting a cell in each context produces the same:
 
@@ -626,7 +626,7 @@ Construct namespaced page/frame/shadow session snapshots and assert that selecti
 
 Also assert diagnostics/closed contexts never extract.
 
-- [ ] **Step 4: Run context and table tests**
+- [x] **Step 4: Run context and table tests**
 
 Run:
 
@@ -636,7 +636,7 @@ npm test -- --test-name-pattern="context|OOPIF|Shadow|pseudo table|large table"
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add public/test-pages/table.html public/test-pages/iframe-child.html public/test-pages/shadow-dom.html public/test-pages/oopif-child.html public/test-pages/styles.css src/shared/tableExtraction.test.ts src/shared/pseudoTableExtraction.test.ts src/main/multiSessionSnapshot.test.ts src/renderer/i18n/messages.ts

@@ -237,6 +237,44 @@ test("does not climb from a frame context into an outer layout candidate", () =>
   assert.equal(extractPseudoTableForSelection(root, "inside-frame"), null);
 });
 
+test("extracts the same pseudo table inside page, frame, and open Shadow contexts", () => {
+  for (const kind of ["page", "frame", "shadow"] as const) {
+    const table = directGrid();
+    const boundary = node(`${kind}-root`, [table], { kind });
+    const root =
+      kind === "page"
+        ? boundary
+        : node("page-root", [boundary], { kind: "page" });
+
+    const result = extractTableForSelection(root, "r2c1");
+
+    assert.deepEqual(
+      {
+        headers: result?.headers,
+        rows: result?.rows
+      },
+      {
+        headers: ["Name", "Status"],
+        rows: [
+          ["Alpha", "Ready"],
+          ["Beta", "Blocked"]
+        ]
+      },
+      `expected equivalent extraction inside ${kind}`
+    );
+  }
+});
+
+test("does not extract from diagnostic or closed-context placeholders", () => {
+  const diagnostic = node("closed-context", [], {
+    kind: "diagnostic",
+    text: "Shadow root is closed"
+  });
+  const root = node("page-root", [diagnostic], { kind: "page" });
+
+  assert.equal(extractTableForSelection(root, "closed-context"), null);
+});
+
 test("maps confidence thresholds deterministically", () => {
   assert.equal(getConfidenceLevel(100), "high");
   assert.equal(getConfidenceLevel(80), "high");

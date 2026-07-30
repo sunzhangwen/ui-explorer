@@ -99,3 +99,61 @@ td {
 thead th {
   background: #e8eee9;
 }
+
+.pseudo-table-grid,
+.pseudo-table-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) minmax(120px, 1fr);
+}
+
+.pseudo-table-rows {
+  display: grid;
+}
+
+.pseudo-table-flex {
+  display: flex;
+  flex-direction: column;
+}
+
+.pseudo-table-flex-row {
+  display: flex;
+}
+
+.pseudo-table-grid,
+.pseudo-table-rows,
+.pseudo-table-flex {
+  border: 1px solid #c8d0c7;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.pseudo-table-grid > *,
+.pseudo-table-row > *,
+.pseudo-table-flex-row > * {
+  min-width: 0;
+  flex: 1 1 0;
+  padding: 8px 10px;
+  border-right: 1px solid #c8d0c7;
+  border-bottom: 1px solid #c8d0c7;
+}
+
+[role="columnheader"] {
+  background: #e8eee9;
+  font-weight: 600;
+}
+
+.large-table-viewport {
+  max-height: 420px;
+  overflow: auto;
+  border: 1px solid #c8d0c7;
+}
+
+.large-table-viewport table {
+  min-width: 1200px;
+}
+
+.large-table-viewport thead {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}

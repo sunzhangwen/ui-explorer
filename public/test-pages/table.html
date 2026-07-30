@@ -9,8 +9,11 @@
   <body>
     <main data-testid="table-page">
       <h1>Table</h1>
-      <p class="muted">A table fixture with grouped headers and merged cells.</p>
+      <p class="muted">
+        Standard tables, CSS Grid/Flex pseudo tables, a false-positive guard, and a large dataset.
+      </p>
       <section>
+        <h2>Standard HTML table</h2>
         <table aria-label="Quarterly automation metrics">
           <thead>
             <tr>
@@ -42,6 +45,110 @@
           </tbody>
         </table>
       </section>
+      <section>
+        <h2>Direct CSS Grid table</h2>
+        <div
+          class="pseudo-table-grid"
+          data-testid="grid-table"
+          data-table-caption="Release readiness"
+          role="table"
+          aria-label="Release readiness"
+        >
+          <div role="columnheader">Name</div>
+          <div role="columnheader">Status</div>
+          <div role="cell">Alpha</div>
+          <div role="cell">Ready</div>
+          <div role="cell">Beta</div>
+          <div role="cell">Blocked</div>
+        </div>
+      </section>
+      <section>
+        <h2>Wrapped CSS Grid rows</h2>
+        <div
+          class="pseudo-table-rows"
+          data-testid="wrapped-grid-table"
+          role="table"
+          aria-label="Wrapped release readiness"
+        >
+          <div class="pseudo-table-row" role="row">
+            <div role="columnheader">Name</div>
+            <div role="columnheader">Status</div>
+          </div>
+          <div class="pseudo-table-row" role="row">
+            <div role="cell">Alpha</div>
+            <div role="cell">Ready</div>
+          </div>
+          <div class="pseudo-table-row" role="row">
+            <div role="cell">Beta</div>
+            <div role="cell">Blocked</div>
+          </div>
+        </div>
+      </section>
+      <section>
+        <h2>Flex row table</h2>
+        <div
+          class="pseudo-table-flex"
+          data-testid="flex-table"
+          role="table"
+          aria-label="Flex release readiness"
+        >
+          <div class="pseudo-table-flex-row" role="row">
+            <div role="columnheader">Name</div>
+            <div role="columnheader">Status</div>
+          </div>
+          <div class="pseudo-table-flex-row" role="row">
+            <div role="cell">Alpha</div>
+            <div role="cell">Ready</div>
+          </div>
+          <div class="pseudo-table-flex-row" role="row">
+            <div role="cell">Beta</div>
+            <div role="cell">Blocked</div>
+          </div>
+        </div>
+      </section>
+      <section>
+        <h2>Ordinary cards (not a table)</h2>
+        <div class="card-grid" data-testid="card-grid">
+          <article class="sample-card">Alpha release notes</article>
+          <article class="sample-card">Beta release notes</article>
+          <article class="sample-card">Gamma release notes</article>
+          <article class="sample-card">Delta release notes</article>
+        </div>
+      </section>
+      <section>
+        <h2>Large HTML table</h2>
+        <p class="muted">2,000 rows by 12 columns, generated deterministically.</p>
+        <div class="large-table-viewport">
+          <table
+            data-testid="large-table"
+            aria-label="Large deterministic dataset"
+          ></table>
+        </div>
+      </section>
     </main>
+    <script>
+      const largeTable = document.querySelector("[data-testid='large-table']");
+      const header = document.createElement("thead");
+      const headerRow = document.createElement("tr");
+      for (let column = 1; column <= 12; column += 1) {
+        const cell = document.createElement("th");
+        cell.scope = "col";
+        cell.textContent = `Column ${column}`;
+        headerRow.append(cell);
+      }
+      header.append(headerRow);
+
+      const body = document.createElement("tbody");
+      for (let row = 1; row <= 2000; row += 1) {
+        const tableRow = document.createElement("tr");
+        for (let column = 1; column <= 12; column += 1) {
+          const cell = document.createElement("td");
+          cell.textContent = `R${String(row).padStart(4, "0")}C${String(column).padStart(2, "0")}`;
+          tableRow.append(cell);
+        }
+        body.append(tableRow);
+      }
+      largeTable.append(header, body);
+    </script>
   </body>
 </html>

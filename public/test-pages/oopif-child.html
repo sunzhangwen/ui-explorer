@@ -38,6 +38,22 @@
         <button type="button" id="navigate-child">Navigate child</button>
         <button type="button" id="remove-child-frame">Remove nested frame</button>
       </div>
+      <section>
+        <h3>OOPIF pseudo table</h3>
+        <div
+          class="pseudo-table-grid"
+          data-testid="oopif-pseudo-table"
+          role="table"
+          aria-label="OOPIF release readiness"
+        >
+          <div role="columnheader">Name</div>
+          <div role="columnheader">Status</div>
+          <div role="cell">Alpha</div>
+          <div role="cell">Ready</div>
+          <div role="cell">Beta</div>
+          <div role="cell">Blocked</div>
+        </div>
+      </section>
       <iframe
         id="nested-frame"
         title="Nested frame inside OOPIF"

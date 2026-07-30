@@ -201,6 +201,41 @@ test("does not resolve an outer HTML table across a frame boundary", () => {
   assert.equal(extractTableForSelection(root, target.id), null);
 });
 
+test("extracts a deterministic 2,000 by 12 large table", () => {
+  const columnCount = 12;
+  const rowCount = 2000;
+  const header = element(
+    "large-header",
+    "tr",
+    Array.from({ length: columnCount }, (_, column) =>
+      cell(`large-h-${column}`, "th", `Column ${column + 1}`)
+    )
+  );
+  const rows = Array.from({ length: rowCount }, (_, row) =>
+    element(
+      `large-row-${row}`,
+      "tr",
+      Array.from({ length: columnCount }, (_, column) =>
+        cell(
+          `large-r${row}-c${column}`,
+          "td",
+          `R${String(row + 1).padStart(4, "0")}C${String(column + 1).padStart(2, "0")}`
+        )
+      )
+    )
+  );
+  const table = element("large-table", "table", [
+    element("large-thead", "thead", [header]),
+    element("large-tbody", "tbody", rows)
+  ]);
+
+  const result = extractTableForSelection(table, "large-r1999-c11");
+
+  assert.equal(result?.headers.length, columnCount);
+  assert.equal(result?.rows.length, rowCount);
+  assert.equal(result?.rows[1999]?.[11], "R2000C12");
+});
+
 function findById(root: ElementSnapshot, id: string): ElementSnapshot | null {
   if (root.id === id) return root;
   for (const child of root.children) {

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { findElementSnapshot, flattenElementSnapshot } from "../shared/domSnapshot.js";
 import type { DomSnapshotResult, ElementSnapshot } from "../shared/ipc.js";
 import { generateSelectorCandidates } from "../shared/selector.js";
+import { extractTableForSelection } from "../shared/tableExtraction.js";
 import {
   appendUnavailableContextDiagnostics,
   stitchSessionSnapshots,
@@ -100,6 +101,21 @@ test("selectors validate against elements inside the stitched OOPIF tree", () =>
   assert.ok(candidates.length > 0);
   assert.deepEqual(candidates[0].validation.matchedElementIds, ["child-session::n-2"]);
   assert.equal(candidates[0].validation.status, "unique");
+});
+
+test("pseudo tables remain extractable after OOPIF session stitching", () => {
+  const result = stitchSessionSnapshots("root-session", [
+    parentSessionSnapshot(true),
+    childTableSessionSnapshot()
+  ]);
+  const table = extractTableForSelection(result.root, "child-session::n-8");
+
+  assert.equal(table?.sourceKind, "css-grid");
+  assert.deepEqual(table?.headers, ["Name", "Status"]);
+  assert.deepEqual(table?.rows, [
+    ["Alpha", "Ready"],
+    ["Beta", "Blocked"]
+  ]);
 });
 
 test("appendUnavailableContextDiagnostics exposes attach and detach limitations in the tree", () => {
@@ -235,6 +251,82 @@ function childSessionSnapshot(): SessionSnapshot {
     parentFrameId: "root-frame",
     revision: 1,
     result: snapshotResult(root, "child-token", 2)
+  };
+}
+
+function childTableSessionSnapshot(): SessionSnapshot {
+  const values = [
+    ["Name", "Status"],
+    ["Alpha", "Ready"],
+    ["Beta", "Blocked"]
+  ];
+  const cells = values.flatMap((row, rowIndex) =>
+    row.map((text, columnIndex) => ({
+      id: `n-${rowIndex * 2 + columnIndex + 3}`,
+      parentId: "n-2",
+      depth: 2,
+      nodeType: 1,
+      nodeName: "DIV",
+      tagName: "div",
+      text,
+      role: rowIndex === 0 ? "columnheader" : "cell",
+      kind: "element" as const,
+      context: [],
+      visible: true,
+      boundingBox: {
+        x: columnIndex * 120,
+        y: rowIndex * 32,
+        width: 112,
+        height: 28
+      },
+      attributes: {},
+      childIds: [],
+      children: []
+    }))
+  );
+  const table: ElementSnapshot = {
+    id: "n-2",
+    parentId: "n-1",
+    depth: 1,
+    nodeType: 1,
+    nodeName: "DIV",
+    tagName: "div",
+    text: "",
+    role: "table",
+    kind: "element",
+    context: [],
+    visible: true,
+    layout: {
+      display: "grid",
+      flexDirection: "row",
+      gridTemplateColumns: "100px 100px",
+      rowGap: "4px",
+      columnGap: "8px"
+    },
+    attributes: { "data-testid": "oopif-pseudo-table" },
+    childIds: cells.map((cell) => cell.id),
+    children: cells
+  };
+  const root: ElementSnapshot = {
+    id: "n-1",
+    depth: 0,
+    nodeType: 1,
+    nodeName: "HTML",
+    tagName: "html",
+    text: "",
+    kind: "page",
+    context: [],
+    attributes: {},
+    childIds: ["n-2"],
+    children: [table]
+  };
+  return {
+    sessionId: "child-session",
+    targetId: "child-target",
+    frameId: "child-frame",
+    parentFrameId: "root-frame",
+    revision: 1,
+    result: snapshotResult(root, "child-table-token", 8)
   };
 }
 
