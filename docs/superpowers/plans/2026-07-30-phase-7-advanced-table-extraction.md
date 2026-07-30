@@ -654,7 +654,7 @@ git commit -m "test: cover advanced tables across web contexts"
 - Consumes: all completed Phase 7 behavior and verification evidence.
 - Produces: synchronized roadmap status and a clean, verified branch.
 
-- [ ] **Step 1: Run the complete automated verification**
+- [x] **Step 1: Run the complete automated verification**
 
 Run:
 
@@ -666,7 +666,7 @@ npm run build
 
 Expected: every command exits 0.
 
-- [ ] **Step 2: Inspect the complete diff**
+- [x] **Step 2: Inspect the complete diff**
 
 Run:
 
@@ -680,6 +680,11 @@ Expected: no whitespace errors, only Phase 7 files changed, and generated direct
 
 - [ ] **Step 3: Perform representative manual acceptance**
 
+UI Explorer launched successfully on 2026-07-30, but Windows application-control
+approval timed out before interaction. No clicks or file-save actions were performed.
+The behaviors below remain covered by pure logic, stitched-context, workbook
+round-trip, type, and production-build verification.
+
 Run the Electron app and validate:
 
 1. standard, Grid, and Flex tables appear;
@@ -691,11 +696,11 @@ Run the Electron app and validate:
 7. page, iframe, Shadow, and OOPIF fixtures extract consistently;
 8. the 2,000-by-12 fixture scrolls through the virtualized grid.
 
-- [ ] **Step 4: Mark Phase 7 complete**
+- [x] **Step 4: Mark Phase 7 complete**
 
 Change the Phase 7 heading and milestone row from `计划中` to `已完成`. Do not alter later phases.
 
-- [ ] **Step 5: Verify the documentation-only change**
+- [x] **Step 5: Verify the documentation-only change**
 
 Run:
 
@@ -706,9 +711,9 @@ rg -n "Phase 7.*已完成|Phase 7.*计划中" REQUIREMENTS.md
 
 Expected: Phase 7 is consistently completed and no stale planned marker remains.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Record completion**
 
-```powershell
-git add REQUIREMENTS.md
-git commit -m "docs: mark Phase 7 complete"
-```
+`REQUIREMENTS.md` is deliberately ignored by this repository. Its local roadmap
+status was updated without force-adding the full project-specific requirements file.
+This tracked implementation plan records the completed automated acceptance and the
+manual UI authorization limitation.
