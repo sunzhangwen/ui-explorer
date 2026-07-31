@@ -8,6 +8,8 @@
     "src/shared/**/*.ts",
     "src/main/browserScripts.ts",
     "src/main/browserScripts.test.ts",
+    "src/main/diagnosticExecution.ts",
+    "src/main/diagnosticExecution.test.ts",
     "src/main/browserDiscovery.ts",
     "src/main/browserDiscovery.test.ts",
     "src/main/chromeExecutable.ts",
