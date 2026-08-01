@@ -4,6 +4,8 @@ import {
   generateAttributeEditDraft,
   generateJavaScriptDiagnosticDraft,
   getJavaScriptDiagnosticSuggestions,
+  isExecuteJavaScriptDiagnosticRequest,
+  isPrepareJavaScriptDiagnosticRequest,
   validateJavaScriptDiagnosticCode
 } from "./javascriptDiagnostics.js";
 import type { ElementSnapshot } from "./ipc.js";
@@ -69,6 +71,52 @@ const oopifShadowButton = (): ElementSnapshot =>
       }
     ]
   });
+
+test("diagnostic request guards reject non-object and incomplete preflight requests", () => {
+  assert.equal(isPrepareJavaScriptDiagnosticRequest(null), false);
+  assert.equal(isPrepareJavaScriptDiagnosticRequest("request"), false);
+  assert.equal(
+    isPrepareJavaScriptDiagnosticRequest({
+      elementId: "child-session::n-2",
+      snapshotToken: "snapshot",
+      code: "return 1;",
+      strategy: "dom-query"
+    }),
+    false
+  );
+});
+
+test("diagnostic request guards reject unsupported preflight strategy and intent", () => {
+  const request = {
+    elementId: "child-session::n-2",
+    snapshotToken: "snapshot",
+    code: "return 1;",
+    strategy: "dom-query",
+    intent: "inspect"
+  };
+
+  assert.equal(isPrepareJavaScriptDiagnosticRequest({ ...request, strategy: "custom" }), false);
+  assert.equal(isPrepareJavaScriptDiagnosticRequest({ ...request, intent: "delete" }), false);
+});
+
+test("diagnostic request guards reject blank execution IDs", () => {
+  assert.equal(isExecuteJavaScriptDiagnosticRequest({}), false);
+  assert.equal(isExecuteJavaScriptDiagnosticRequest({ executionId: "   " }), false);
+});
+
+test("diagnostic request guards accept valid preflight and execution requests", () => {
+  assert.equal(
+    isPrepareJavaScriptDiagnosticRequest({
+      elementId: "child-session::n-2",
+      snapshotToken: null,
+      code: "return 1;",
+      strategy: "context-traversal",
+      intent: "mutate-dom"
+    }),
+    true
+  );
+  assert.equal(isExecuteJavaScriptDiagnosticRequest({ executionId: "diagnostic-1" }), true);
+});
 
 test("DOM query draft searches the target root with an encoded selector", () => {
   const draft = generateJavaScriptDiagnosticDraft({

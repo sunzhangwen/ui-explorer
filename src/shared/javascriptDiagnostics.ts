@@ -1,4 +1,9 @@
-import type { ContextBoundary, ElementSnapshot } from "./ipc.js";
+import type {
+  ContextBoundary,
+  ElementSnapshot,
+  ExecuteJavaScriptDiagnosticRequest,
+  PrepareJavaScriptDiagnosticRequest
+} from "./ipc.js";
 import type { SelectorCandidate } from "./selector.js";
 
 export const JAVASCRIPT_DIAGNOSTIC_CODE_LIMIT = 50 * 1024;
@@ -32,6 +37,25 @@ export type JavaScriptDiagnosticSuggestionCode =
   | "use-context-traversal"
   | "oopif-session-routing"
   | "reduce-traversal-scope";
+
+export function isPrepareJavaScriptDiagnosticRequest(
+  value: unknown
+): value is PrepareJavaScriptDiagnosticRequest {
+  return (
+    isRecord(value) &&
+    typeof value.elementId === "string" &&
+    (typeof value.snapshotToken === "string" || value.snapshotToken === null) &&
+    typeof value.code === "string" &&
+    isJavaScriptDiagnosticStrategy(value.strategy) &&
+    isJavaScriptDiagnosticIntent(value.intent)
+  );
+}
+
+export function isExecuteJavaScriptDiagnosticRequest(
+  value: unknown
+): value is ExecuteJavaScriptDiagnosticRequest {
+  return isRecord(value) && typeof value.executionId === "string" && value.executionId.trim().length > 0;
+}
 
 export function generateJavaScriptDiagnosticDraft(input: {
   element: ElementSnapshot;
@@ -223,6 +247,18 @@ function hasDynamicAttribute(element: ElementSnapshot): boolean {
     return true;
   }
   return element.attributes.class?.split(/\s+/).some(looksDynamic) ?? false;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isJavaScriptDiagnosticStrategy(value: unknown): value is JavaScriptDiagnosticStrategy {
+  return value === "dom-query" || value === "tree-traversal" || value === "context-traversal";
+}
+
+function isJavaScriptDiagnosticIntent(value: unknown): value is JavaScriptDiagnosticIntent {
+  return value === "inspect" || value === "mutate-dom";
 }
 
 function looksDynamic(value: string): boolean {

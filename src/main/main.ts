@@ -11,6 +11,10 @@ import {
   type TableExportSaveResult
 } from "../shared/ipc.js";
 import { isOpenChromePageRequest } from "../shared/chromeLaunch.js";
+import {
+  isExecuteJavaScriptDiagnosticRequest,
+  isPrepareJavaScriptDiagnosticRequest
+} from "../shared/javascriptDiagnostics.js";
 import { validateTableExportSaveRequest } from "../shared/tableExportRequest.js";
 import {
   ensureTableFileExtension,
@@ -112,6 +116,25 @@ function registerIpcHandlers(): void {
   );
   ipcMain.handle(IPC_CHANNELS.setElementPickerEnabled, (_event, enabled: boolean) => browserSession.setElementPickerEnabled(enabled));
   ipcMain.handle(IPC_CHANNELS.getPickedElementId, () => browserSession.getPickedElementId());
+  ipcMain.handle(IPC_CHANNELS.prepareJavaScriptDiagnostic, (_event, request: unknown) => {
+    if (!isPrepareJavaScriptDiagnosticRequest(request)) {
+      return {
+        status: "rejected",
+        code: "invalid-element",
+        message: "Invalid JavaScript diagnostic preparation request."
+      };
+    }
+    return browserSession.prepareJavaScriptDiagnostic(request);
+  });
+  ipcMain.handle(IPC_CHANNELS.executeJavaScriptDiagnostic, (_event, request: unknown) => {
+    if (!isExecuteJavaScriptDiagnosticRequest(request)) {
+      return {
+        status: "validation-error",
+        message: "Invalid JavaScript diagnostic execution request."
+      };
+    }
+    return browserSession.executeJavaScriptDiagnostic(request);
+  });
   ipcMain.handle(
     IPC_CHANNELS.saveTableExport,
     async (_event, value: unknown): Promise<TableExportSaveResult> => {

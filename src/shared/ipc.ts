@@ -264,6 +264,12 @@ export type IpcApi = {
   setElementPickerEnabled: (enabled: boolean) => Promise<void>;
   getPickedElementId: () => Promise<string | null>;
   onCaptureRequested: (listener: () => void) => () => void;
+  prepareJavaScriptDiagnostic: (
+    request: PrepareJavaScriptDiagnosticRequest
+  ) => Promise<PrepareJavaScriptDiagnosticResult>;
+  executeJavaScriptDiagnostic: (
+    request: ExecuteJavaScriptDiagnosticRequest
+  ) => Promise<ExecuteJavaScriptDiagnosticResult>;
   saveTableExport: (request: TableExportSaveRequest) => Promise<TableExportSaveResult>;
 };
 
@@ -329,6 +335,8 @@ export const IPC_CHANNELS = {
   highlightElements: "browser:highlight-elements",
   setElementPickerEnabled: "browser:set-element-picker-enabled",
   getPickedElementId: "browser:get-picked-element-id",
+  prepareJavaScriptDiagnostic: "browser:prepare-javascript-diagnostic",
+  executeJavaScriptDiagnostic: "browser:execute-javascript-diagnostic",
   captureRequested: "browser:capture-requested",
   saveTableExport: "table:save-export"
 } as const;

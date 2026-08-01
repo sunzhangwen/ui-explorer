@@ -19,8 +19,12 @@ import {
   type BrowserTarget,
   type DomSnapshotResult,
   type ElementSnapshot,
+  type ExecuteJavaScriptDiagnosticRequest,
+  type ExecuteJavaScriptDiagnosticResult,
   type IpcApi,
   type Locale,
+  type PrepareJavaScriptDiagnosticRequest,
+  type PrepareJavaScriptDiagnosticResult,
   type TableExportSaveRequest,
   type TableExportSaveResult,
   type TestPage,
@@ -91,6 +95,12 @@ type AppStore = {
   setElementPickerEnabled: (enabled: boolean) => Promise<void>;
   getPickedElementId: () => Promise<string | null>;
   subscribeCaptureRequested: (listener: () => void) => () => void;
+  prepareJavaScriptDiagnostic: (
+    request: PrepareJavaScriptDiagnosticRequest
+  ) => Promise<PrepareJavaScriptDiagnosticResult>;
+  executeJavaScriptDiagnostic: (
+    request: ExecuteJavaScriptDiagnosticRequest
+  ) => Promise<ExecuteJavaScriptDiagnosticResult>;
   saveTableExport: (request: TableExportSaveRequest) => Promise<TableExportSaveResult>;
   initialize: () => Promise<void>;
 };
@@ -471,6 +481,8 @@ export const useAppStore = create<AppStore>()(
       },
       getPickedElementId: async () => getApi().getPickedElementId(),
       subscribeCaptureRequested: (listener) => getApi().onCaptureRequested(listener),
+      prepareJavaScriptDiagnostic: async (request) => getApi().prepareJavaScriptDiagnostic(request),
+      executeJavaScriptDiagnostic: async (request) => getApi().executeJavaScriptDiagnostic(request),
       saveTableExport: async (request) => getApi().saveTableExport(request),
       initialize: async () => {
         try {
@@ -561,6 +573,15 @@ function getApi(): IpcApi {
     setElementPickerEnabled: async () => undefined,
     getPickedElementId: async () => null,
     onCaptureRequested: () => () => undefined,
+    prepareJavaScriptDiagnostic: async () => ({
+      status: "rejected",
+      code: "session-unavailable",
+      message: "Electron IPC is not available."
+    }),
+    executeJavaScriptDiagnostic: async () => ({
+      status: "connection-error",
+      message: "Electron IPC is not available."
+    }),
     saveTableExport: async () => ({
       status: "error",
       message: "Electron IPC is not available."
