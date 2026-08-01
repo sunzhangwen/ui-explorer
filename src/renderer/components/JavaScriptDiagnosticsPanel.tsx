@@ -22,10 +22,12 @@ import type { SelectorCandidate } from "../../shared/selector";
 import { useI18n } from "../i18n/I18nProvider";
 import type { MessageKey } from "../i18n/messages";
 import {
+  getCurrentDiagnosticResult,
+  getCurrentPreparedDiagnostic,
   initialDiagnosticPanelState,
+  isDiagnosticDraftCurrent,
   reduceDiagnosticPanelState,
-  type DiagnosticDraftBinding,
-  type DiagnosticExecutionBinding
+  type DiagnosticDraftBinding
 } from "./javascriptDiagnosticsState";
 import { MonacoCodeEditor } from "./MonacoCodeEditor";
 
@@ -72,6 +74,24 @@ export function JavaScriptDiagnosticsPanel({
   const browserTargetId = browserTarget?.id ?? null;
   const requestedAttributeName = requestedAttributeEdit?.attributeName ?? null;
   const requestedAttributeValue = requestedAttributeEdit?.attributeValue ?? null;
+  const draftIsCurrent = isDiagnosticDraftCurrent(
+    state,
+    elementId,
+    snapshotToken,
+    browserTargetId
+  );
+  const prepared = getCurrentPreparedDiagnostic(
+    state,
+    elementId,
+    snapshotToken,
+    browserTargetId
+  );
+  const currentResult = getCurrentDiagnosticResult(
+    state,
+    elementId,
+    snapshotToken,
+    browserTargetId
+  );
 
   useEffect(() => {
     if (!element || element.diagnostic || !browserTargetId) {
@@ -80,6 +100,7 @@ export function JavaScriptDiagnosticsPanel({
     }
     dispatch({
       type: "draft-replaced",
+      browserTargetId,
       elementId: element.id,
       snapshotToken,
       draft: generateJavaScriptDiagnosticDraft({
@@ -97,6 +118,7 @@ export function JavaScriptDiagnosticsPanel({
     if (element && !element.diagnostic && browserTargetId) {
       dispatch({
         type: "draft-replaced",
+        browserTargetId,
         elementId: element.id,
         snapshotToken,
         draft: generateAttributeEditDraft({
@@ -126,8 +148,8 @@ export function JavaScriptDiagnosticsPanel({
   }, [onMutationComplete, state.mutationRefreshExecutionId]);
 
   const failure =
-    state.result?.value.status === "timeout" || state.result?.value.status === "stale-target"
-      ? state.result.value.status
+    currentResult?.value.status === "timeout" || currentResult?.value.status === "stale-target"
+      ? currentResult.value.status
       : undefined;
   const suggestions = useMemo(
     () =>
@@ -139,17 +161,19 @@ export function JavaScriptDiagnosticsPanel({
   const codeValidation = validateJavaScriptDiagnosticCode(state.code);
   const canPrepare =
     Boolean(element && root && browserTarget && !element.diagnostic) &&
+    draftIsCurrent &&
     codeValidation.ok &&
     state.preparing === null &&
     state.executing === null;
   const contextSummary = formatContextPath(element);
 
   const selectStrategy = (strategy: JavaScriptDiagnosticStrategy) => {
-    if (!element || element.diagnostic) {
+    if (!element || element.diagnostic || !browserTargetId) {
       return;
     }
     dispatch({
       type: "draft-replaced",
+      browserTargetId,
       elementId: element.id,
       snapshotToken,
       draft: generateJavaScriptDiagnosticDraft({ element, candidate, strategy })
@@ -192,7 +216,7 @@ export function JavaScriptDiagnosticsPanel({
   };
 
   const executeOnce = async () => {
-    const binding = state.prepared;
+    const binding = prepared;
     if (!binding || !state.confirmed || state.executing) {
       return;
     }
@@ -325,7 +349,7 @@ export function JavaScriptDiagnosticsPanel({
         </section>
       ) : null}
 
-      {state.prepared && state.preparedDetails ? (
+      {prepared && state.preparedDetails ? (
         <section className="javascript-confirmation">
           <h3>{t("javascript.prepared")}</h3>
           <dl>
@@ -368,7 +392,7 @@ export function JavaScriptDiagnosticsPanel({
         </section>
       ) : null}
 
-      {state.result ? <DiagnosticResult result={state.result.value} /> : null}
+      {currentResult ? <DiagnosticResult result={currentResult.value} /> : null}
     </div>
   );
 }

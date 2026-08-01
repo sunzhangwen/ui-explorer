@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { ExecuteJavaScriptDiagnosticResult } from "../../shared/ipc.js";
 import {
+  getCurrentPreparedDiagnostic,
+  getCurrentDiagnosticResult,
   initialDiagnosticPanelState,
+  isDiagnosticDraftCurrent,
   reduceDiagnosticPanelState,
   type DiagnosticExecutionBinding,
   type DiagnosticPanelState
@@ -26,6 +29,7 @@ const successResult = (): ExecuteJavaScriptDiagnosticResult => ({
 
 const stateFor = (elementId: string, snapshotToken: string): DiagnosticPanelState => ({
   ...initialDiagnosticPanelState,
+  browserTargetId: "target-a",
   elementId,
   snapshotToken,
   code: "return 1",
@@ -33,11 +37,34 @@ const stateFor = (elementId: string, snapshotToken: string): DiagnosticPanelStat
   confirmed: true
 });
 
-test("editing code invalidates a prepared diagnostic", () => {
-  const prepared = reduceDiagnosticPanelState(initialDiagnosticPanelState, {
-    type: "prepared",
-    binding: binding({ code: "return 1", executionId: "execution-1" })
+const executingState = (
+  elementId = "element-a",
+  snapshotToken = "snapshot-a"
+): DiagnosticPanelState =>
+  reduceDiagnosticPanelState(stateFor(elementId, snapshotToken), {
+    type: "execution-started",
+    binding: binding({ elementId, snapshotToken })
   });
+
+const preparedState = (): DiagnosticPanelState => {
+  const request = {
+    elementId: "element-a",
+    snapshotToken: "snapshot-a",
+    code: "return 1"
+  };
+  const preparing = reduceDiagnosticPanelState(
+    { ...initialDiagnosticPanelState, browserTargetId: "target-a", ...request },
+    { type: "prepare-started", binding: request }
+  );
+  return reduceDiagnosticPanelState(preparing, {
+    type: "prepared",
+    binding: binding()
+  });
+};
+
+test("editing code invalidates a prepared diagnostic", () => {
+  const prepared = preparedState();
+  assert.deepEqual(prepared.prepared, binding());
 
   const edited = reduceDiagnosticPanelState(prepared, {
     type: "code-changed",
@@ -50,7 +77,7 @@ test("editing code invalidates a prepared diagnostic", () => {
 });
 
 test("a result for an old element is ignored", () => {
-  const state = stateFor("element-a", "snapshot-a");
+  const state = executingState("element-a", "snapshot-a");
   const next = reduceDiagnosticPanelState(state, {
     type: "execution-finished",
     binding: binding({ elementId: "element-b" }),
@@ -61,7 +88,7 @@ test("a result for an old element is ignored", () => {
 });
 
 test("an accepted mutation result requests one snapshot refresh", () => {
-  const state = stateFor("element-a", "snapshot-a");
+  const state = executingState();
   const next = reduceDiagnosticPanelState(state, {
     type: "execution-finished",
     binding: binding(),
@@ -81,7 +108,7 @@ test("an accepted mutation result requests one snapshot refresh", () => {
 });
 
 test("execution results are bound to snapshot, code, and execution ID", () => {
-  const state = stateFor("element-a", "snapshot-a");
+  const state = executingState();
   const staleBindings = [
     binding({ snapshotToken: "snapshot-b" }),
     binding({ code: "return 2" }),
@@ -104,6 +131,7 @@ test("replacing the selected target draft clears prepared and confirmed state", 
   const state = stateFor("element-a", "snapshot-a");
   const next = reduceDiagnosticPanelState(state, {
     type: "draft-replaced",
+    browserTargetId: "target-b",
     elementId: "element-b",
     snapshotToken: "snapshot-b",
     draft: {
@@ -130,6 +158,7 @@ test("a prepare response invalidated by an intervening edit stays stale", () => 
   const preparing = reduceDiagnosticPanelState(
     {
       ...initialDiagnosticPanelState,
+      browserTargetId: "target-a",
       ...request
     },
     { type: "prepare-started", binding: request }
@@ -149,4 +178,101 @@ test("a prepare response invalidated by an intervening edit stays stale", () => 
   });
 
   assert.equal(next, restored);
+});
+
+test("editing during execution keeps the in-flight lock and blocks another preparation", () => {
+  const requestBinding = binding();
+  const executing = reduceDiagnosticPanelState(stateFor("element-a", "snapshot-a"), {
+    type: "execution-started",
+    binding: requestBinding
+  });
+  const edited = reduceDiagnosticPanelState(executing, {
+    type: "code-changed",
+    code: "return 2"
+  });
+
+  assert.deepEqual(edited.executing, requestBinding);
+  const prepareAttempt = reduceDiagnosticPanelState(edited, {
+    type: "prepare-started",
+    binding: {
+      elementId: "element-a",
+      snapshotToken: "snapshot-a",
+      code: "return 2"
+    }
+  });
+  assert.equal(prepareAttempt, edited);
+});
+
+test("a stale mutation completion stays hidden and still requests one refresh", () => {
+  const requestBinding = binding();
+  const executing = reduceDiagnosticPanelState(stateFor("element-a", "snapshot-a"), {
+    type: "execution-started",
+    binding: requestBinding
+  });
+  const edited = reduceDiagnosticPanelState(executing, {
+    type: "code-changed",
+    code: "return 2"
+  });
+  const settled = reduceDiagnosticPanelState(edited, {
+    type: "execution-finished",
+    binding: requestBinding,
+    result: {
+      status: "success",
+      value: { kind: "undefined" },
+      mutatedDom: true
+    }
+  });
+
+  assert.equal(settled.executing, null);
+  assert.equal(settled.result, null);
+  assert.equal(settled.mutationRefreshExecutionId, "execution-1");
+});
+
+test("target clearing invalidates a pending preparation response", () => {
+  const request = {
+    elementId: "element-a",
+    snapshotToken: "snapshot-a",
+    code: "return 1"
+  };
+  const preparing = reduceDiagnosticPanelState(
+    { ...initialDiagnosticPanelState, browserTargetId: "target-a", ...request },
+    { type: "prepare-started", binding: request }
+  );
+  const cleared = reduceDiagnosticPanelState(preparing, { type: "target-cleared" });
+  const next = reduceDiagnosticPanelState(cleared, {
+    type: "prepared",
+    binding: binding()
+  });
+
+  assert.equal(next, cleared);
+});
+
+test("prepared execution is synchronously hidden when element or snapshot props change", () => {
+  const state = stateFor("element-a", "snapshot-a");
+
+  assert.equal(isDiagnosticDraftCurrent(state, "element-a", "snapshot-a", "target-a"), true);
+  assert.equal(isDiagnosticDraftCurrent(state, "element-b", "snapshot-a", "target-a"), false);
+  assert.equal(isDiagnosticDraftCurrent(state, "element-a", "snapshot-b", "target-a"), false);
+  assert.equal(isDiagnosticDraftCurrent(state, "element-a", "snapshot-a", "target-b"), false);
+  assert.equal(
+    getCurrentPreparedDiagnostic(state, "element-a", "snapshot-a", "target-a"),
+    state.prepared
+  );
+  assert.equal(getCurrentPreparedDiagnostic(state, "element-b", "snapshot-a", "target-a"), null);
+  assert.equal(getCurrentPreparedDiagnostic(state, "element-a", "snapshot-b", "target-a"), null);
+  assert.equal(getCurrentPreparedDiagnostic(state, "element-a", "snapshot-a", "target-b"), null);
+});
+
+test("execution result is synchronously hidden when element props change", () => {
+  const settled = reduceDiagnosticPanelState(executingState(), {
+    type: "execution-finished",
+    binding: binding(),
+    result: successResult()
+  });
+
+  assert.equal(
+    getCurrentDiagnosticResult(settled, "element-a", "snapshot-a", "target-a"),
+    settled.result
+  );
+  assert.equal(getCurrentDiagnosticResult(settled, "element-b", "snapshot-a", "target-a"), null);
 });

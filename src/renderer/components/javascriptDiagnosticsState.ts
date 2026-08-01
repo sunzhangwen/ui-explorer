@@ -23,6 +23,7 @@ type PreparedResult = Extract<PrepareJavaScriptDiagnosticResult, { status: "prep
 type RejectedResult = Extract<PrepareJavaScriptDiagnosticResult, { status: "rejected" }>;
 
 export type DiagnosticPanelState = {
+  browserTargetId: string | null;
   elementId: string | null;
   snapshotToken: string | null;
   code: string;
@@ -45,6 +46,7 @@ export type DiagnosticPanelState = {
 export type DiagnosticPanelAction =
   | {
       type: "draft-replaced";
+      browserTargetId: string;
       elementId: string | null;
       snapshotToken: string | null;
       draft: JavaScriptDiagnosticDraft;
@@ -64,6 +66,7 @@ export type DiagnosticPanelAction =
   | { type: "mutation-refresh-consumed"; executionId: string };
 
 export const initialDiagnosticPanelState: DiagnosticPanelState = {
+  browserTargetId: null,
   elementId: null,
   snapshotToken: null,
   code: "",
@@ -87,6 +90,7 @@ export function reduceDiagnosticPanelState(
   switch (action.type) {
     case "draft-replaced":
       if (
+        state.browserTargetId === action.browserTargetId &&
         state.elementId === action.elementId &&
         state.snapshotToken === action.snapshotToken &&
         state.code === action.draft.code &&
@@ -96,6 +100,7 @@ export function reduceDiagnosticPanelState(
         return state;
       }
       return invalidateDiagnostic(state, {
+        browserTargetId: action.browserTargetId,
         elementId: action.elementId,
         snapshotToken: action.snapshotToken,
         code: action.draft.code,
@@ -104,10 +109,16 @@ export function reduceDiagnosticPanelState(
         risks: action.draft.risks
       });
     case "target-cleared":
-      if (state.elementId === null && state.snapshotToken === null && state.code === "") {
+      if (
+        state.browserTargetId === null &&
+        state.elementId === null &&
+        state.snapshotToken === null &&
+        state.code === ""
+      ) {
         return state;
       }
       return invalidateDiagnostic(state, {
+        browserTargetId: null,
         elementId: null,
         snapshotToken: null,
         code: "",
@@ -120,7 +131,7 @@ export function reduceDiagnosticPanelState(
       }
       return invalidateDiagnostic(state, { code: action.code });
     case "prepare-started":
-      if (!isDraftBindingCurrent(state, action.binding)) {
+      if (state.executing || !isDraftBindingCurrent(state, action.binding)) {
         return state;
       }
       return {
@@ -130,16 +141,12 @@ export function reduceDiagnosticPanelState(
         prepared: null,
         preparedDetails: null,
         confirmed: false,
-        executing: null,
         result: null
       };
     case "prepared": {
-      const isInitialBinding =
-        state.elementId === null && state.snapshotToken === null && state.code === "";
       if (
-        !isInitialBinding &&
-        (!isDraftBindingCurrent(state, action.binding) ||
-          !sameDraftBinding(state.preparing, action.binding))
+        !isDraftBindingCurrent(state, action.binding) ||
+        !sameDraftBinding(state.preparing, action.binding)
       ) {
         return state;
       }
@@ -153,7 +160,6 @@ export function reduceDiagnosticPanelState(
         prepared: action.binding,
         preparedDetails: action.details ?? null,
         confirmed: false,
-        executing: null,
         result: null
       };
     }
@@ -171,7 +177,6 @@ export function reduceDiagnosticPanelState(
         prepared: null,
         preparedDetails: null,
         confirmed: false,
-        executing: null,
         result: null
       };
     case "confirmation-changed":
@@ -180,17 +185,21 @@ export function reduceDiagnosticPanelState(
       }
       return { ...state, confirmed: action.confirmed };
     case "execution-started":
-      if (!state.confirmed || !sameExecutionBinding(state.prepared, action.binding)) {
-        return state;
-      }
-      return { ...state, executing: action.binding, result: null };
-    case "execution-finished":
       if (
-        !isDraftBindingCurrent(state, action.binding) ||
+        state.executing ||
+        !state.confirmed ||
         !sameExecutionBinding(state.prepared, action.binding)
       ) {
         return state;
       }
+      return { ...state, executing: action.binding, result: null };
+    case "execution-finished": {
+      if (!sameExecutionBinding(state.executing, action.binding)) {
+        return state;
+      }
+      const resultIsCurrent =
+        isDraftBindingCurrent(state, action.binding) &&
+        sameExecutionBinding(state.prepared, action.binding);
       return {
         ...state,
         preparing: null,
@@ -198,12 +207,13 @@ export function reduceDiagnosticPanelState(
         preparedDetails: null,
         confirmed: false,
         executing: null,
-        result: { binding: action.binding, value: action.result },
+        result: resultIsCurrent ? { binding: action.binding, value: action.result } : null,
         mutationRefreshExecutionId:
           action.result.status === "success" && action.result.mutatedDom
             ? action.binding.executionId
             : state.mutationRefreshExecutionId
       };
+    }
     case "mutation-refresh-consumed":
       return state.mutationRefreshExecutionId === action.executionId
         ? { ...state, mutationRefreshExecutionId: null }
@@ -215,12 +225,63 @@ export function reduceDiagnosticPanelState(
   }
 }
 
+export function isDiagnosticDraftCurrent(
+  state: DiagnosticPanelState,
+  elementId: string | null,
+  snapshotToken: string | null,
+  browserTargetId: string | null
+): boolean {
+  return (
+    elementId !== null &&
+    browserTargetId !== null &&
+    state.browserTargetId === browserTargetId &&
+    state.elementId === elementId &&
+    state.snapshotToken === snapshotToken
+  );
+}
+
+export function getCurrentPreparedDiagnostic(
+  state: DiagnosticPanelState,
+  elementId: string | null,
+  snapshotToken: string | null,
+  browserTargetId: string | null
+): DiagnosticExecutionBinding | null {
+  if (
+    !isDiagnosticDraftCurrent(state, elementId, snapshotToken, browserTargetId) ||
+    !state.prepared
+  ) {
+    return null;
+  }
+  return isDraftBindingCurrent(state, state.prepared) ? state.prepared : null;
+}
+
+export function getCurrentDiagnosticResult(
+  state: DiagnosticPanelState,
+  elementId: string | null,
+  snapshotToken: string | null,
+  browserTargetId: string | null
+): DiagnosticPanelState["result"] {
+  if (
+    !isDiagnosticDraftCurrent(state, elementId, snapshotToken, browserTargetId) ||
+    !state.result
+  ) {
+    return null;
+  }
+  return isDraftBindingCurrent(state, state.result.binding) ? state.result : null;
+}
+
 function invalidateDiagnostic(
   state: DiagnosticPanelState,
   replacement: Partial<
     Pick<
       DiagnosticPanelState,
-      "elementId" | "snapshotToken" | "code" | "strategy" | "intent" | "risks"
+      | "browserTargetId"
+      | "elementId"
+      | "snapshotToken"
+      | "code"
+      | "strategy"
+      | "intent"
+      | "risks"
     >
   >
 ): DiagnosticPanelState {
@@ -232,7 +293,6 @@ function invalidateDiagnostic(
     prepared: null,
     preparedDetails: null,
     confirmed: false,
-    executing: null,
     result: null
   };
 }

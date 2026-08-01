@@ -905,13 +905,13 @@ export function WorkbenchLayout(): JSX.Element {
 
           <CollapsibleSection
             icon={<Code2 size={15} />}
+            keepMounted
             open={rightPanelSections.javascript}
             summary={javascriptSummary}
             title={t("panel.javascript")}
             onToggle={() => toggleRightPanelSection("javascript")}
           >
             <JavaScriptDiagnosticsPanel
-              key={`${selectedBrowserTargetId ?? "target"}-${domSnapshot?.capturedAt ?? "snapshot"}`}
               element={selectedElement}
               root={domSnapshot?.root ?? null}
               candidate={selectedCandidate}
@@ -1423,6 +1423,7 @@ function ElementSnapshotPanel({ element }: { element: ElementSnapshot | null }):
 function CollapsibleSection({
   children,
   icon,
+  keepMounted = false,
   onToggle,
   open,
   summary,
@@ -1430,6 +1431,7 @@ function CollapsibleSection({
 }: {
   children: ReactNode;
   icon: ReactNode;
+  keepMounted?: boolean;
   onToggle: () => void;
   open: boolean;
   summary: string;
@@ -1443,7 +1445,9 @@ function CollapsibleSection({
         <span>{title}</span>
         <small>{summary}</small>
       </button>
-      {open ? <div className="collapsible-body">{children}</div> : null}
+      {open || keepMounted ? (
+        <div className="collapsible-body" hidden={!open}>{children}</div>
+      ) : null}
     </section>
   );
 }
