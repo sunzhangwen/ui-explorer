@@ -29,6 +29,9 @@
           <button type="button" class="btn_3f91a random-48291">Dynamic class button</button>
           <a href="https://example.com" role="button" aria-label="Open documentation">Docs</a>
         </div>
+        <button data-testid="phase-8-diagnostic-target" data-phase="before">
+          Phase 8 diagnostic target
+        </button>
       </section>
 
       <section>
@@ -40,5 +43,18 @@
         </div>
       </section>
     </main>
+    <script>
+      window.phase8Diagnostics = {
+        undefinedValue: () => undefined,
+        cyclicValue: () => {
+          const value = { label: "cycle" };
+          value.self = value;
+          return value;
+        },
+        domNode: () => document.querySelector('[data-testid="phase-8-diagnostic-target"]'),
+        rejection: async () => { throw new Error("Phase 8 expected failure"); },
+        never: () => new Promise(() => {})
+      };
+    </script>
   </body>
 </html>

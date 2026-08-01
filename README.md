@@ -15,7 +15,11 @@ UI Explorer 是一个基于 Electron + React + TypeScript 的网页 UI 元素探
 - 支持启用/禁用上下文（frame、Shadow）及 Selector 的层级、标签和属性，支持手动编辑属性值；上下文层级变更会立即重新验证。
 - Selector 多匹配时可在目标页面编号高亮所有匹配元素。
 - 支持导出 JSON、Playwright TypeScript、Selenium Python 代码预览；导出会保留 frame 进入顺序并处理 open Shadow DOM 上下文。
-- 对跨域 frame、OOPIF、测试页明确标记的 closed Shadow Root 和已脱离上下文显示限制诊断，避免将不可访问的内部元素当作可定位目标。
+- 通过附加的 CDP 子 Session 处理跨域 iframe 与 OOPIF；快照、Selector、表格提取和诊断执行始终路由到目标所属的 Session。
+- 支持高级表格提取：选择行列、识别 CSS Grid/Flex 伪表格并导出 CSV、JSON、Markdown 和 Excel。
+- 提供受控 JavaScript 诊断：在 Monaco 中审查和编辑代码，经预检、一次性确认令牌后只在目标 Session 执行，并明确展示值、`undefined`、不可序列化值、异常和超时结果。
+- 属性编辑经同一受控诊断流程确认后才临时修改 DOM，并刷新快照；这不是自动化执行引擎或安全沙箱。
+- 对测试页明确标记的 closed Shadow Root 和已脱离上下文显示限制诊断，避免将不可访问的内部元素当作可定位目标。
 - 提供中英文 i18n、深浅主题和普通/紧凑密度界面。
 
 ## 技术栈
@@ -131,6 +135,7 @@ npm run preview
 src/
   main/
     browserSession.ts      # CDP 连接、DOM 快照、元素高亮
+    diagnosticExecution.ts # 一次性诊断执行令牌与运行时结果归一化
     main.ts                # Electron 主进程与 IPC 注册
     preload.ts             # 安全暴露渲染进程 API
   renderer/
@@ -142,6 +147,7 @@ src/
     browserTargets.ts      # 浏览器 target 解析
     domSnapshot.ts         # DOM 快照工具
     ipc.ts                 # IPC 类型和通道定义
+    javascriptDiagnostics.ts # 诊断代码草稿、校验与确定性建议
     selector.ts            # Selector 生成、评分、验证和导出
   types/
     global.d.ts            # window.uiExplorer 类型声明
@@ -149,9 +155,9 @@ src/
 
 ## 测试页面
 
-内置测试页面位于 `public/test-pages/`，覆盖普通 DOM、iframe、Shadow DOM、动态列表、表格和弹层等场景。它们用于验证元素捕获、Selector 生成、评分、验证和导出能力。
+内置测试页面位于 `public/test-pages/`，覆盖普通 DOM、iframe、Shadow DOM、OOPIF、动态列表、HTML/伪表格和弹层等场景。它们用于验证元素捕获、Selector 生成、评分、验证、导出和受控 JavaScript 诊断。
 
-其中 `iframe.html` 覆盖同源嵌套 frame，`shadow-dom.html` 覆盖 open、嵌套 open 与 closed Shadow Root。对于同源 frame 与 open Shadow DOM，元素树、属性路径、Selector 层级、导出代码和限制诊断共用同一套上下文信息。
+其中 `iframe.html` 覆盖同源嵌套 frame，`shadow-dom.html` 覆盖 open、嵌套 open 与 closed Shadow Root，`oopif.html` 在 `localhost` 和 `127.0.0.1` 之间创建跨站子 frame。四类诊断上下文均有稳定的 `data-testid="phase-8-diagnostic-target"` 目标；`basic-dom.html` 还提供 `window.phase8Diagnostics`，用于人工验证 `undefined`、循环对象、DOM 节点、拒绝和超时结果。对于 frame、Shadow 和 OOPIF，元素树、属性路径、Selector 层级、导出代码、表格提取和诊断执行共用同一套上下文信息。
 
 ### 在浏览器中直接加载
 
@@ -168,6 +174,7 @@ npm exec vite -- --host 127.0.0.1
 | 普通 DOM | `http://127.0.0.1:5173/test-pages/basic-dom.html` |
 | 同源嵌套 iframe | `http://127.0.0.1:5173/test-pages/iframe.html` |
 | Shadow DOM | `http://127.0.0.1:5173/test-pages/shadow-dom.html` |
+| 跨站 OOPIF | `http://127.0.0.1:5173/test-pages/oopif.html` |
 | 动态列表 | `http://127.0.0.1:5173/test-pages/dynamic-list.html` |
 | HTML 表格 | `http://127.0.0.1:5173/test-pages/table.html` |
 | 弹层与瞬态元素 | `http://127.0.0.1:5173/test-pages/popup.html` |
@@ -204,10 +211,10 @@ msedge `
 
 ## 上下文范围与限制
 
-当前支持遍历同源嵌套 iframe，以及进入 open Shadow DOM。跨域 iframe 与浏览器以 OOPIF（Out-of-Process iframe）形式承载的 frame 内容暂不支持遍历：应用会显示不可访问的上下文诊断，而不会报告其内部的可选元素。对于带有测试标记、可确认 closed mode 的宿主，应用只显示限制诊断，无法捕获或定位其内部节点；普通页面若无法可靠识别 closed Shadow Root，则不会猜测或误报。
+当前支持遍历同源嵌套 iframe、进入 open Shadow DOM，并通过附加 CDP 子 Session 检查跨域 iframe/OOPIF。OOPIF 中的 Selector、表格提取和诊断代码从子 Session 的 `document` 开始，绝不假装可经由父页 `contentDocument` 跨域访问。对于带有测试标记、可确认 closed mode 的宿主，应用只显示限制诊断，无法捕获或定位其内部节点；普通页面若无法可靠识别 closed Shadow Root，则不会猜测或误报。
 
 ## 开发状态
 
-项目当前支持 Chrome/Edge 调试目标连接与恢复、DOM/iframe/open Shadow DOM 快照、元素捕获与属性诊断、Selector 生成与验证，以及标准 HTML 表格预览和 CSV、JSON、Markdown 导出。后续规划包括跨域/OOPIF frame 遍历、高级结构化数据提取、桌面 UIAutomation、UiPath 兼容、项目管理和 AI 辅助等能力。
+项目当前支持 Chrome/Edge 调试目标连接与恢复、DOM/iframe/open Shadow/OOPIF 快照、元素捕获与属性诊断、Selector 生成与验证、高级 HTML/伪表格提取和 CSV、JSON、Markdown、Excel 导出，以及受预检和单次确认约束的 JavaScript 诊断。Phase 8 的自动化验证已通过；其最终完成状态仍以代表性浏览器人工验收为准。后续规划包括桌面 UIAutomation、UiPath 兼容、项目管理和 AI 辅助等能力。
 
 详细需求见 [REQUIREMENTS.md](./REQUIREMENTS.md)。
