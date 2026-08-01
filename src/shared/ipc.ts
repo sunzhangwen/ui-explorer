@@ -6,6 +6,11 @@ import type {
   OpenChromePageRequest,
   OpenChromePageResult
 } from "./chromeLaunch.js";
+import type {
+  JavaScriptDiagnosticIntent,
+  JavaScriptDiagnosticRiskCode,
+  JavaScriptDiagnosticStrategy
+} from "./javascriptDiagnostics.js";
 
 export type ThemeName = "light" | "dark";
 export type Locale = "zh-CN" | "en-US";
@@ -142,6 +147,63 @@ export type DomSnapshotResult = {
   snapshotToken?: string;
   nodeCount: number;
 };
+
+export type PrepareJavaScriptDiagnosticRequest = {
+  elementId: string;
+  snapshotToken: string | null;
+  code: string;
+  strategy: JavaScriptDiagnosticStrategy;
+  intent: JavaScriptDiagnosticIntent;
+};
+
+export type PreparedJavaScriptDiagnosticTarget = {
+  browserTargetId: string;
+  title: string;
+  url: string;
+  elementId: string;
+  tagName: string;
+  context: ContextBoundary[];
+};
+
+export type PrepareJavaScriptDiagnosticResult =
+  | {
+      status: "prepared";
+      executionId: string;
+      expiresAt: string;
+      codeDigest: string;
+      risks: JavaScriptDiagnosticRiskCode[];
+      target: PreparedJavaScriptDiagnosticTarget;
+    }
+  | {
+      status: "rejected";
+      code:
+        | "empty-code"
+        | "code-too-large"
+        | "stale-snapshot"
+        | "invalid-element"
+        | "session-unavailable";
+      message: string;
+    };
+
+export type JavaScriptDiagnosticValue =
+  | { kind: "undefined" }
+  | { kind: "null" }
+  | { kind: "boolean"; value: boolean }
+  | { kind: "number"; value: number | string }
+  | { kind: "string"; value: string; truncated: boolean }
+  | { kind: "bigint" | "symbol" | "function"; value: string }
+  | { kind: "dom-node"; tagName: string; id: string; className: string; text: string }
+  | { kind: "object" | "array"; value: unknown; truncated: boolean };
+
+export type ExecuteJavaScriptDiagnosticRequest = { executionId: string };
+
+export type ExecuteJavaScriptDiagnosticResult =
+  | { status: "success"; value: JavaScriptDiagnosticValue; mutatedDom: boolean }
+  | { status: "exception"; message: string; stack?: string }
+  | { status: "timeout"; message: string }
+  | { status: "stale-target"; message: string }
+  | { status: "validation-error"; message: string }
+  | { status: "connection-error"; message: string };
 
 export type BrowserConnectionInfo = {
   endpoint: string;

@@ -1,14 +1,23 @@
 import { getDefaultBrowserTargetId, recoverBrowserTarget, toBrowserTargets } from "../shared/browserTargets.js";
-import { normalizeDebugEndpoint } from "../shared/domSnapshot.js";
+import { flattenElementSnapshot, normalizeDebugEndpoint } from "../shared/domSnapshot.js";
 import type {
   BrowserConnectionDiagnostics,
   BrowserConnectionInfo,
   BrowserTarget,
   DomSnapshotResult,
+  ElementSnapshot,
+  ExecuteJavaScriptDiagnosticRequest,
+  ExecuteJavaScriptDiagnosticResult,
   HighlightElementRequest,
   HighlightElementsRequest,
-  HighlightResult
+  HighlightResult,
+  PrepareJavaScriptDiagnosticRequest,
+  PrepareJavaScriptDiagnosticResult
 } from "../shared/ipc.js";
+import {
+  JAVASCRIPT_DIAGNOSTIC_TIMEOUT_MS,
+  validateJavaScriptDiagnosticCode
+} from "../shared/javascriptDiagnostics.js";
 import { ELEMENT_PICKER_SCRIPT, GET_PICKED_ELEMENT_SCRIPT, HIGHLIGHT_SCRIPT, SNAPSHOT_SCRIPT } from "./browserScripts.js";
 import { CdpConnection, type CdpEvent } from "./cdpConnection.js";
 import { readBrowserVersion } from "./browserDiscovery.js";
@@ -21,6 +30,12 @@ import {
   WebContextRegistry,
   type ActiveWebContext
 } from "./webContextRegistry.js";
+import {
+  DiagnosticExecutionPlanStore,
+  buildDiagnosticRuntimeExpression,
+  digestDiagnosticCode,
+  isRuntimeTimeoutError
+} from "./diagnosticExecution.js";
 
 type RuntimeEvaluateResult<T> = {
   result: {
@@ -30,8 +45,18 @@ type RuntimeEvaluateResult<T> = {
   };
   exceptionDetails?: {
     text?: string;
+    exception?: {
+      description?: string;
+    };
   };
 };
+
+type DiagnosticRuntimeResult =
+  | {
+      status: "success";
+      value: Extract<ExecuteJavaScriptDiagnosticResult, { status: "success" }>["value"];
+    }
+  | Extract<ExecuteJavaScriptDiagnosticResult, { status: "exception" | "stale-target" }>;
 
 export type BrowserSessionConnection = {
   connect: (webSocketDebuggerUrl: string) => Promise<void>;
@@ -68,8 +93,11 @@ export class BrowserSession {
   private contextRegistry = new WebContextRegistry();
   private eventQueue = Promise.resolve();
   private pickerEnabled = false;
+  private diagnosticPlanStore = new DiagnosticExecutionPlanStore();
   private lastSnapshotRouting: {
     snapshotToken: string | null;
+    root: ElementSnapshot | null;
+    elements: Map<string, ElementSnapshot>;
     sessions: Map<string, { snapshotToken: string | null; revision: number }>;
   } | null = null;
 
@@ -114,6 +142,7 @@ export class BrowserSession {
     this.contextRegistry.clear();
     this.pickerEnabled = false;
     this.lastSnapshotRouting = null;
+    this.diagnosticPlanStore.clear();
   }
 
   async listTargets(): Promise<BrowserTarget[]> {
@@ -261,6 +290,10 @@ export class BrowserSession {
     );
     this.lastSnapshotRouting = {
       snapshotToken: stitched.snapshotToken ?? null,
+      root: stitched.root,
+      elements: new Map(
+        flattenElementSnapshot(stitched.root).map((element) => [element.id, element])
+      ),
       sessions: new Map(
         snapshots.map((snapshot) => [
           snapshot.sessionId,
@@ -272,6 +305,215 @@ export class BrowserSession {
       )
     };
     return stitched;
+  }
+
+  async prepareJavaScriptDiagnostic(
+    request: PrepareJavaScriptDiagnosticRequest
+  ): Promise<PrepareJavaScriptDiagnosticResult> {
+    const validation = validateJavaScriptDiagnosticCode(request.code);
+    if (!validation.ok) {
+      return rejectDiagnosticPreparation(
+        validation.code,
+        validation.code === "empty-code"
+          ? "JavaScript diagnostic code cannot be empty."
+          : "JavaScript diagnostic code exceeds the size limit."
+      );
+    }
+
+    const routing = this.lastSnapshotRouting;
+    if (
+      !routing ||
+      !request.snapshotToken ||
+      routing.snapshotToken !== request.snapshotToken
+    ) {
+      return rejectDiagnosticPreparation(
+        "stale-snapshot",
+        "The selected snapshot is no longer current."
+      );
+    }
+
+    const parsed = parseRuntimeElementId(request.elementId);
+    if (!parsed) {
+      return rejectDiagnosticPreparation(
+        "invalid-element",
+        "The selected element ID is invalid."
+      );
+    }
+
+    const sessionRouting = routing.sessions.get(parsed.sessionId);
+    const element = routing.elements.get(request.elementId);
+    if (!sessionRouting || !element) {
+      return rejectDiagnosticPreparation(
+        "invalid-element",
+        "The selected element is not part of the current snapshot."
+      );
+    }
+
+    const current = this.contextRegistry.getBySessionId(parsed.sessionId);
+    if (!current || current.state !== "active") {
+      return rejectDiagnosticPreparation(
+        "session-unavailable",
+        "The selected element's browser session is unavailable."
+      );
+    }
+    if (current.revision !== sessionRouting.revision) {
+      return rejectDiagnosticPreparation(
+        "stale-snapshot",
+        "The selected element navigated after the snapshot was captured."
+      );
+    }
+    if (!sessionRouting.snapshotToken) {
+      return rejectDiagnosticPreparation(
+        "stale-snapshot",
+        "The selected browser session has no current snapshot token."
+      );
+    }
+
+    const expression = `(() =>
+  window.__uiExplorerSnapshotToken === ${JSON.stringify(sessionRouting.snapshotToken)} &&
+  window.__uiExplorerElements?.has(${JSON.stringify(parsed.localId)}) === true
+)()`;
+    try {
+      const present = await this.evaluateInSession<boolean>(expression, parsed.sessionId);
+      if (present !== true) {
+        return rejectDiagnosticPreparation(
+          "stale-snapshot",
+          "The selected element is no longer registered in the captured page."
+        );
+      }
+    } catch (error) {
+      return rejectDiagnosticPreparation(
+        "session-unavailable",
+        error instanceof Error ? error.message : String(error)
+      );
+    }
+
+    const probedContext = this.contextRegistry.getBySessionId(parsed.sessionId);
+    if (
+      this.lastSnapshotRouting !== routing ||
+      !probedContext ||
+      probedContext.state !== "active" ||
+      probedContext.revision !== sessionRouting.revision
+    ) {
+      return rejectDiagnosticPreparation(
+        "stale-snapshot",
+        "The selected browser session changed during diagnostic preparation."
+      );
+    }
+
+    const target = this.selectedTarget;
+    if (!target) {
+      return rejectDiagnosticPreparation(
+        "session-unavailable",
+        "No browser target is selected."
+      );
+    }
+    const codeDigest = digestDiagnosticCode(request.code);
+    const plan = this.diagnosticPlanStore.create({
+      code: request.code,
+      codeDigest,
+      elementId: request.elementId,
+      localElementId: parsed.localId,
+      snapshotToken: sessionRouting.snapshotToken,
+      sessionId: parsed.sessionId,
+      sessionRevision: sessionRouting.revision,
+      intent: request.intent
+    });
+
+    return {
+      status: "prepared",
+      executionId: plan.executionId,
+      expiresAt: plan.expiresAt,
+      codeDigest,
+      risks: request.intent === "mutate-dom"
+        ? ["arbitrary-code", "dom-mutation"]
+        : ["arbitrary-code"],
+      target: {
+        browserTargetId: target.id,
+        title: target.title,
+        url: target.url,
+        elementId: request.elementId,
+        tagName: element.tagName ?? element.nodeName.toLowerCase(),
+        context: (element.context ?? []).map(stripRawSessionId)
+      }
+    };
+  }
+
+  async executeJavaScriptDiagnostic(
+    request: ExecuteJavaScriptDiagnosticRequest
+  ): Promise<ExecuteJavaScriptDiagnosticResult> {
+    const consumed = this.diagnosticPlanStore.consume(request.executionId);
+    if (consumed.status === "missing") {
+      return {
+        status: "validation-error",
+        message: "The diagnostic execution ID is invalid or has already been used."
+      };
+    }
+    if (consumed.status === "expired") {
+      return {
+        status: "validation-error",
+        message: "The diagnostic execution plan has expired."
+      };
+    }
+
+    const { plan } = consumed;
+    const current = this.contextRegistry.getBySessionId(plan.sessionId);
+    if (
+      !current ||
+      current.state !== "active" ||
+      current.revision !== plan.sessionRevision
+    ) {
+      return {
+        status: "stale-target",
+        message: "The selected browser target changed after diagnostic preparation."
+      };
+    }
+    if (!this.targetClient.isConnected()) {
+      return {
+        status: "connection-error",
+        message: "The browser connection is unavailable."
+      };
+    }
+
+    const expression = buildDiagnosticRuntimeExpression({
+      code: plan.code,
+      localElementId: plan.localElementId,
+      snapshotToken: plan.snapshotToken
+    });
+    try {
+      const response = await this.targetClient.send<RuntimeEvaluateResult<DiagnosticRuntimeResult>>(
+        "Runtime.evaluate",
+        {
+          expression,
+          awaitPromise: true,
+          returnByValue: true,
+          timeout: JAVASCRIPT_DIAGNOSTIC_TIMEOUT_MS
+        },
+        plan.sessionId
+      );
+      if (response.exceptionDetails) {
+        return mapDiagnosticExceptionDetails(response.exceptionDetails);
+      }
+      const result = response.result.value;
+      if (!result) {
+        return {
+          status: "connection-error",
+          message: response.result.description ?? "Runtime evaluation returned no diagnostic result."
+        };
+      }
+      if (result.status === "success") {
+        return {
+          ...result,
+          mutatedDom: plan.intent === "mutate-dom"
+        };
+      }
+      return result;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return isRuntimeTimeoutError(error)
+        ? { status: "timeout", message }
+        : { status: "connection-error", message };
+    }
   }
 
   async highlightElement(request: HighlightElementRequest): Promise<HighlightResult> {
@@ -372,6 +614,9 @@ export class BrowserSession {
     if (!target) {
       throw new Error("Selected target is not available.");
     }
+
+    this.diagnosticPlanStore.clear();
+    this.lastSnapshotRouting = null;
 
     if (!this.targetClient.isConnected()) {
       await this.connectBrowserWebSocket();
@@ -653,6 +898,36 @@ export class BrowserSession {
       diagnostics: this.diagnostics ?? undefined
     };
   }
+}
+
+function rejectDiagnosticPreparation(
+  code: Extract<PrepareJavaScriptDiagnosticResult, { status: "rejected" }>["code"],
+  message: string
+): PrepareJavaScriptDiagnosticResult {
+  return { status: "rejected", code, message };
+}
+
+function stripRawSessionId(boundary: NonNullable<ElementSnapshot["context"]>[number]) {
+  const { sessionId: _sessionId, ...safeBoundary } = boundary;
+  return safeBoundary;
+}
+
+function mapDiagnosticExceptionDetails(
+  details: NonNullable<RuntimeEvaluateResult<unknown>["exceptionDetails"]>
+): ExecuteJavaScriptDiagnosticResult {
+  const description = details.exception?.description;
+  if (description) {
+    const [message] = description.split(/\r?\n/, 1);
+    return {
+      status: "exception",
+      message: message || details.text || "Runtime evaluation failed.",
+      ...(description.includes("\n") ? { stack: description } : {})
+    };
+  }
+  return {
+    status: "exception",
+    message: details.text ?? "Runtime evaluation failed."
+  };
 }
 
 export function parseRuntimeElementId(

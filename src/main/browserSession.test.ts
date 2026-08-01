@@ -391,6 +391,413 @@ test("BrowserSession routes namespaced highlights and picker results to their ow
   assert.equal(picked, "child-session::n-2");
 });
 
+test("JavaScript diagnostic preparation routes its registry probe to the exact child session", async () => {
+  const { connection, session, snapshot } = await createConnectedOopifSession();
+  const commandStart = connection.sent.length;
+
+  const prepared = await session.prepareJavaScriptDiagnostic({
+    elementId: "child-session::n-2",
+    snapshotToken: snapshot.snapshotToken ?? null,
+    code: "return $target.textContent;",
+    strategy: "dom-query",
+    intent: "inspect"
+  });
+
+  assert.equal(prepared.status, "prepared");
+  if (prepared.status !== "prepared") return;
+  assert.equal(prepared.codeDigest.length, 64);
+  assert.deepEqual(prepared.risks, ["arbitrary-code"]);
+  assert.deepEqual(prepared.target, {
+    browserTargetId: "page-1",
+    title: "App",
+    url: "https://app.test",
+    elementId: "child-session::n-2",
+    tagName: "button",
+    context: assertContext(snapshot, "child-session::n-2").map(({ sessionId: _sessionId, ...boundary }) => boundary)
+  });
+  const commands = connection.sent.slice(commandStart);
+  assert.ok(commands.some((command) =>
+    command.method === "Runtime.evaluate" &&
+    command.sessionId === "child-session" &&
+    String(command.params?.expression).includes("window.__uiExplorerElements?.has")
+  ));
+  assert.equal(commands.some((command) =>
+    command.method === "Runtime.evaluate" &&
+    command.sessionId === "root-session" &&
+    String(command.params?.expression).includes("n-2")
+  ), false);
+});
+
+test("JavaScript diagnostic preparation rejects a mismatched snapshot token", async () => {
+  const { session } = await createConnectedOopifSession();
+
+  const result = await session.prepareJavaScriptDiagnostic({
+    elementId: "child-session::n-2",
+    snapshotToken: "old-token",
+    code: "return $target.textContent;",
+    strategy: "dom-query",
+    intent: "inspect"
+  });
+
+  assert.equal(result.status, "rejected");
+  if (result.status === "rejected") assert.equal(result.code, "stale-snapshot");
+});
+
+test("JavaScript diagnostic preparation rejects an invalid global element ID", async () => {
+  const { session, snapshot } = await createConnectedOopifSession();
+
+  const result = await session.prepareJavaScriptDiagnostic({
+    elementId: "n-2",
+    snapshotToken: snapshot.snapshotToken ?? null,
+    code: "return $target.textContent;",
+    strategy: "dom-query",
+    intent: "inspect"
+  });
+
+  assert.equal(result.status, "rejected");
+  if (result.status === "rejected") assert.equal(result.code, "invalid-element");
+});
+
+test("JavaScript diagnostic preparation rejects an inactive owning session", async () => {
+  const { session, snapshot } = await createConnectedOopifSession();
+  const testSession = session as unknown as {
+    contextRegistry: {
+      invalidateSession: (sessionId: string, code: "session-detached", detail: string) => void;
+    };
+  };
+  testSession.contextRegistry.invalidateSession(
+    "child-session",
+    "session-detached",
+    "CDP session detached."
+  );
+
+  const result = await session.prepareJavaScriptDiagnostic({
+    elementId: "child-session::n-2",
+    snapshotToken: snapshot.snapshotToken ?? null,
+    code: "return $target.textContent;",
+    strategy: "dom-query",
+    intent: "inspect"
+  });
+
+  assert.equal(result.status, "rejected");
+  if (result.status === "rejected") assert.equal(result.code, "session-unavailable");
+});
+
+test("JavaScript diagnostic preparation rejects a navigation revision change", async () => {
+  const { connection, session, snapshot } = await createConnectedOopifSession();
+  connection.emit(frameNavigatedEvent("child-session", "child-frame", "root-frame", "next-loader"));
+  connection.emit(executionContextEvent("child-session", "child-frame", 21));
+
+  const result = await session.prepareJavaScriptDiagnostic({
+    elementId: "child-session::n-2",
+    snapshotToken: snapshot.snapshotToken ?? null,
+    code: "return $target.textContent;",
+    strategy: "dom-query",
+    intent: "inspect"
+  });
+
+  assert.equal(result.status, "rejected");
+  if (result.status === "rejected") assert.equal(result.code, "stale-snapshot");
+});
+
+test("JavaScript diagnostic preparation rejects navigation during its registry probe", async () => {
+  const { connection, session, snapshot } = await createConnectedOopifSession();
+  let release: ((value: unknown) => void) | undefined;
+  connection.registryProbeHandler = () => new Promise((resolve) => {
+    release = resolve;
+  });
+
+  const pending = prepareChildDiagnostic(session, snapshot);
+  assert.ok(release);
+  connection.emit(frameNavigatedEvent("child-session", "child-frame", "root-frame", "next-loader"));
+  connection.emit(executionContextEvent("child-session", "child-frame", 21));
+  release({ result: { type: "boolean", value: true } });
+
+  const result = await pending;
+  assert.equal(result.status, "rejected");
+  if (result.status === "rejected") assert.equal(result.code, "stale-snapshot");
+});
+
+test("JavaScript diagnostic preparation rejects an element absent from the stitched snapshot", async () => {
+  const { session, snapshot } = await createConnectedOopifSession();
+
+  const result = await session.prepareJavaScriptDiagnostic({
+    elementId: "child-session::missing",
+    snapshotToken: snapshot.snapshotToken ?? null,
+    code: "return $target.textContent;",
+    strategy: "dom-query",
+    intent: "inspect"
+  });
+
+  assert.equal(result.status, "rejected");
+  if (result.status === "rejected") assert.equal(result.code, "invalid-element");
+});
+
+test("JavaScript diagnostic execution routes once to the child session with bounded Runtime.evaluate parameters", async () => {
+  const { connection, session, snapshot } = await createConnectedOopifSession();
+  connection.diagnosticRuntimeHandler = () => ({
+    result: {
+      type: "object",
+      value: {
+        status: "success",
+        value: { kind: "string", value: "Pay", truncated: false }
+      }
+    }
+  });
+  const prepared = await prepareChildDiagnostic(session, snapshot);
+  assert.equal(prepared.status, "prepared");
+  if (prepared.status !== "prepared") return;
+  const commandStart = connection.sent.length;
+
+  const first = await session.executeJavaScriptDiagnostic({ executionId: prepared.executionId });
+  const second = await session.executeJavaScriptDiagnostic({ executionId: prepared.executionId });
+
+  assert.deepEqual(first, {
+    status: "success",
+    value: { kind: "string", value: "Pay", truncated: false },
+    mutatedDom: false
+  });
+  assert.equal(second.status, "validation-error");
+  const commands = connection.sent.slice(commandStart);
+  assert.equal(commands.length, 1);
+  assert.equal(commands[0]?.method, "Runtime.evaluate");
+  assert.equal(commands[0]?.sessionId, "child-session");
+  assert.equal(commands[0]?.params?.timeout, 5_000);
+  assert.equal(commands[0]?.params?.awaitPromise, true);
+  assert.equal(commands[0]?.params?.returnByValue, true);
+  assert.match(String(commands[0]?.params?.expression), /const localElementId = "n-2";/);
+});
+
+test("JavaScript diagnostic execution consumes the plan before awaiting CDP", async () => {
+  const { connection, session, snapshot } = await createConnectedOopifSession();
+  let release: ((value: unknown) => void) | undefined;
+  connection.diagnosticRuntimeHandler = () => new Promise((resolve) => {
+    release = resolve;
+  });
+  const prepared = await prepareChildDiagnostic(session, snapshot);
+  assert.equal(prepared.status, "prepared");
+  if (prepared.status !== "prepared") return;
+
+  const pending = session.executeJavaScriptDiagnostic({ executionId: prepared.executionId });
+  const replay = await session.executeJavaScriptDiagnostic({ executionId: prepared.executionId });
+  assert.equal(replay.status, "validation-error");
+  assert.ok(release);
+  release({
+    result: {
+      type: "object",
+      value: { status: "success", value: { kind: "undefined" } }
+    }
+  });
+  assert.equal((await pending).status, "success");
+});
+
+test("JavaScript diagnostic execution reports mutation intent without trusting runtime output", async () => {
+  const { connection, session, snapshot } = await createConnectedOopifSession();
+  connection.diagnosticRuntimeHandler = () => ({
+    result: {
+      type: "object",
+      value: { status: "success", value: { kind: "boolean", value: true } }
+    }
+  });
+  const prepared = await prepareChildDiagnostic(session, snapshot, "mutate-dom");
+  assert.equal(prepared.status, "prepared");
+  if (prepared.status !== "prepared") return;
+
+  const result = await session.executeJavaScriptDiagnostic({ executionId: prepared.executionId });
+
+  assert.equal(result.status, "success");
+  if (result.status === "success") assert.equal(result.mutatedDom, true);
+});
+
+test("JavaScript diagnostic execution maps runtime exceptions and stale targets", async () => {
+  const first = await createConnectedOopifSession();
+  first.connection.diagnosticRuntimeHandler = () => ({
+    result: {
+      type: "object",
+      value: { status: "exception", message: "user boom", stack: "stack line" }
+    }
+  });
+  const exceptionPlan = await prepareChildDiagnostic(first.session, first.snapshot);
+  assert.equal(exceptionPlan.status, "prepared");
+  if (exceptionPlan.status !== "prepared") return;
+  assert.deepEqual(
+    await first.session.executeJavaScriptDiagnostic({ executionId: exceptionPlan.executionId }),
+    { status: "exception", message: "user boom", stack: "stack line" }
+  );
+
+  const second = await createConnectedOopifSession();
+  second.connection.diagnosticRuntimeHandler = () => ({
+    result: {
+      type: "object",
+      value: { status: "stale-target", message: "The selected target is no longer available." }
+    }
+  });
+  const stalePlan = await prepareChildDiagnostic(second.session, second.snapshot);
+  assert.equal(stalePlan.status, "prepared");
+  if (stalePlan.status !== "prepared") return;
+  assert.equal(
+    (await second.session.executeJavaScriptDiagnostic({ executionId: stalePlan.executionId })).status,
+    "stale-target"
+  );
+});
+
+test("JavaScript diagnostic execution maps CDP exception details", async () => {
+  const { connection, session, snapshot } = await createConnectedOopifSession();
+  connection.diagnosticRuntimeHandler = () => ({
+    result: { type: "object", description: "Promise rejected" },
+    exceptionDetails: {
+      text: "Uncaught (in promise)",
+      exception: { description: "Error: CDP boom\n    at diagnostic:1:1" }
+    }
+  });
+  const prepared = await prepareChildDiagnostic(session, snapshot);
+  assert.equal(prepared.status, "prepared");
+  if (prepared.status !== "prepared") return;
+
+  const result = await session.executeJavaScriptDiagnostic({ executionId: prepared.executionId });
+
+  assert.deepEqual(result, {
+    status: "exception",
+    message: "Error: CDP boom",
+    stack: "Error: CDP boom\n    at diagnostic:1:1"
+  });
+});
+
+test("JavaScript diagnostic execution distinguishes timeout and connection errors", async () => {
+  const timedOut = await createConnectedOopifSession();
+  timedOut.connection.diagnosticRuntimeHandler = () => {
+    throw new Error("Runtime.evaluate timed out after 5000 ms");
+  };
+  const timeoutPlan = await prepareChildDiagnostic(timedOut.session, timedOut.snapshot);
+  assert.equal(timeoutPlan.status, "prepared");
+  if (timeoutPlan.status !== "prepared") return;
+  assert.equal(
+    (await timedOut.session.executeJavaScriptDiagnostic({ executionId: timeoutPlan.executionId })).status,
+    "timeout"
+  );
+
+  const disconnected = await createConnectedOopifSession();
+  disconnected.connection.diagnosticRuntimeHandler = () => {
+    throw new Error("WebSocket closed");
+  };
+  const connectionPlan = await prepareChildDiagnostic(disconnected.session, disconnected.snapshot);
+  assert.equal(connectionPlan.status, "prepared");
+  if (connectionPlan.status !== "prepared") return;
+  assert.deepEqual(
+    await disconnected.session.executeJavaScriptDiagnostic({ executionId: connectionPlan.executionId }),
+    { status: "connection-error", message: "WebSocket closed" }
+  );
+});
+
+test("JavaScript diagnostic execution rejects navigation between preparation and execution", async () => {
+  const { connection, session, snapshot } = await createConnectedOopifSession();
+  const prepared = await prepareChildDiagnostic(session, snapshot);
+  assert.equal(prepared.status, "prepared");
+  if (prepared.status !== "prepared") return;
+  connection.emit(frameNavigatedEvent("child-session", "child-frame", "root-frame", "next-loader"));
+  connection.emit(executionContextEvent("child-session", "child-frame", 21));
+
+  const result = await session.executeJavaScriptDiagnostic({ executionId: prepared.executionId });
+
+  assert.equal(result.status, "stale-target");
+  assert.equal(connection.sent.some((command) =>
+    command.method === "Runtime.evaluate" &&
+    String(command.params?.expression).includes("const source =")
+  ), false);
+});
+
+test("JavaScript diagnostic disconnect clears prepared plans", async () => {
+  const { session, snapshot } = await createConnectedOopifSession();
+  const prepared = await prepareChildDiagnostic(session, snapshot);
+  assert.equal(prepared.status, "prepared");
+  if (prepared.status !== "prepared") return;
+  session.disconnect();
+
+  const result = await session.executeJavaScriptDiagnostic({ executionId: prepared.executionId });
+
+  assert.equal(result.status, "validation-error");
+});
+
+test("JavaScript diagnostic top-level target reconnect clears prepared plans", async () => {
+  const { session, snapshot } = await createConnectedOopifSession();
+  const prepared = await prepareChildDiagnostic(session, snapshot);
+  assert.equal(prepared.status, "prepared");
+  if (prepared.status !== "prepared") return;
+  const testSession = session as unknown as {
+    connectTarget: (targetId: string) => Promise<void>;
+  };
+
+  await testSession.connectTarget("page-1");
+  const result = await session.executeJavaScriptDiagnostic({ executionId: prepared.executionId });
+
+  assert.equal(result.status, "validation-error");
+});
+
+async function prepareChildDiagnostic(
+  session: BrowserSession,
+  snapshot: DomSnapshotResult,
+  intent: "inspect" | "mutate-dom" = "inspect"
+) {
+  return session.prepareJavaScriptDiagnostic({
+    elementId: "child-session::n-2",
+    snapshotToken: snapshot.snapshotToken ?? null,
+    code: "return $target.textContent;",
+    strategy: "dom-query",
+    intent
+  });
+}
+
+async function createConnectedOopifSession(): Promise<{
+  connection: RecordingConnection;
+  session: BrowserSession;
+  snapshot: DomSnapshotResult;
+}> {
+  const connection = new RecordingConnection(new Map([
+    ["root-session", oopifParentSnapshot()],
+    ["child-session", oopifChildSnapshot()]
+  ]));
+  const session = new BrowserSession({
+    connection,
+    readBrowserVersion: async () => ({
+      browser: "Chrome/140.0.0.0",
+      webSocketDebuggerUrl: "ws://127.0.0.1:9222/devtools/browser/browser-id"
+    })
+  });
+  const testSession = session as unknown as {
+    fetchTargets: () => Promise<Array<{
+      id: string;
+      type: string;
+      title: string;
+      url: string;
+      webSocketDebuggerUrl: string;
+    }>>;
+  };
+  testSession.fetchTargets = async () => [{
+    id: "page-1",
+    type: "page",
+    title: "App",
+    url: "https://app.test",
+    webSocketDebuggerUrl: "ws://page-1"
+  }];
+  await session.connect("http://127.0.0.1:9222");
+  connection.emit(frameNavigatedEvent("root-session", "root-frame", undefined, "root-loader"));
+  connection.emit(executionContextEvent("root-session", "root-frame", 10));
+  connection.emit(attachedIframeEvent());
+  connection.emit(frameNavigatedEvent("child-session", "child-frame", "root-frame", "child-loader"));
+  connection.emit(executionContextEvent("child-session", "child-frame", 20));
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  return { connection, session, snapshot: await session.getDomSnapshot() };
+}
+
+function assertContext(
+  snapshot: DomSnapshotResult,
+  elementId: string
+): NonNullable<ElementSnapshot["context"]> {
+  const element = findElementSnapshot(snapshot.root, elementId);
+  assert.ok(element);
+  return element.context ?? [];
+}
+
 type RecordedCommand = {
   method: string;
   params?: Record<string, unknown>;
@@ -401,6 +808,14 @@ class RecordingConnection implements BrowserSessionConnection {
   readonly connectedUrls: string[] = [];
   readonly sent: RecordedCommand[] = [];
   readonly pickedBySession = new Map<string, string | null>();
+  diagnosticRuntimeHandler?: (
+    sessionId: string | undefined,
+    params: Record<string, unknown> | undefined
+  ) => unknown | Promise<unknown>;
+  registryProbeHandler?: (
+    sessionId: string | undefined,
+    params: Record<string, unknown> | undefined
+  ) => unknown | Promise<unknown>;
   private listeners = new Set<(event: CdpEvent) => void>();
   private connected = false;
 
@@ -443,6 +858,15 @@ class RecordingConnection implements BrowserSessionConnection {
     }
     if (method === "Runtime.evaluate") {
       const expression = String(params?.expression ?? "");
+      if (expression.includes("window.__uiExplorerElements?.has")) {
+        if (this.registryProbeHandler) {
+          return await this.registryProbeHandler(sessionId, params) as T;
+        }
+        return { result: { type: "boolean", value: true } } as T;
+      }
+      if (expression.includes("const source =")) {
+        return await this.diagnosticRuntimeHandler?.(sessionId, params) as T;
+      }
       if (/const elementIds = \[/.test(expression)) {
         const match = /const elementIds = (\[[^;]*\]);/.exec(expression);
         const ids = match ? JSON.parse(match[1]) as string[] : [];
