@@ -182,7 +182,7 @@ if (!root) throw new Error("Unable to enter " + ${stepName});`;
 }
 
 function getSelector(element: ElementSnapshot, candidate: SelectorCandidate | null): string {
-  if (candidate?.selector) {
+  if (candidate?.type === "css" && candidate.selector) {
     return candidate.selector;
   }
 

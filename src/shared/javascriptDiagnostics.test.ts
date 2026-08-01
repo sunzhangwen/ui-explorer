@@ -9,7 +9,7 @@ import {
   validateJavaScriptDiagnosticCode
 } from "./javascriptDiagnostics.js";
 import type { ElementSnapshot } from "./ipc.js";
-import type { SelectorCandidate, SelectorValidationStatus } from "./selector.js";
+import type { SelectorCandidate, SelectorType, SelectorValidationStatus } from "./selector.js";
 
 const button = (overrides: Partial<ElementSnapshot> = {}): ElementSnapshot => ({
   id: "button",
@@ -26,11 +26,12 @@ const button = (overrides: Partial<ElementSnapshot> = {}): ElementSnapshot => ({
 const candidate = (
   selector: string,
   status: SelectorValidationStatus = "unique",
-  matchCount = status === "unique" ? 1 : 0
+  matchCount = status === "unique" ? 1 : 0,
+  type: SelectorType = "css"
 ): SelectorCandidate => ({
   id: "candidate",
-  type: "css",
-  label: "CSS",
+  type,
+  label: type === "playwright" ? "Playwright" : type === "xpath" ? "XPath" : "CSS",
   selector,
   layers: [],
   score: { unique: 100, stability: 100, readability: 100, total: 100, risks: [] },
@@ -132,6 +133,22 @@ test("DOM query draft searches the target root with an encoded selector", () => 
   assert.doesNotThrow(() => new Function("$target", draft.code));
 });
 
+test("DOM query draft falls back to CSS for a Playwright candidate", () => {
+  const draft = generateJavaScriptDiagnosticDraft({
+    element: button({ attributes: { "data-testid": "phase-8-diagnostic-target" } }),
+    candidate: candidate(
+      'page.getByTestId("phase-8-diagnostic-target")',
+      "unique",
+      1,
+      "playwright"
+    ),
+    strategy: "dom-query"
+  });
+
+  assert.doesNotMatch(draft.code, /page\.getByTestId/);
+  assert.match(draft.code, /button\[data-testid=\\"phase-8-diagnostic-target\\"\]/);
+});
+
 test("context draft skips the owning OOPIF boundary and enters later local boundaries", () => {
   const draft = generateJavaScriptDiagnosticDraft({
     element: oopifShadowButton(),
@@ -142,6 +159,17 @@ test("context draft skips the owning OOPIF boundary and enters later local bound
   assert.doesNotMatch(draft.code, /payment-frame/);
   assert.match(draft.code, /nested-frame/);
   assert.match(draft.code, /shadowRoot/);
+});
+
+test("context draft falls back to CSS for an XPath candidate", () => {
+  const draft = generateJavaScriptDiagnosticDraft({
+    element: oopifShadowButton(),
+    candidate: candidate('//button[@data-testid="save"]', "unique", 1, "xpath"),
+    strategy: "context-traversal"
+  });
+
+  assert.doesNotMatch(draft.code, /\/\/button/);
+  assert.match(draft.code, /querySelectorAll\(\"button\"\)/);
 });
 
 test("attribute edit is encoded and marked as a DOM mutation", () => {
