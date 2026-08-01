@@ -64,6 +64,35 @@ test("execution plans expire and are consumed once", () => {
   assert.equal(store.consume("execution-1").status, "expired");
 });
 
+test("execution plans are immutable copies bound to their original input", () => {
+  const store = new DiagnosticExecutionPlanStore({ createId: () => "execution-immutable" });
+  const created = store.create(planInput());
+
+  assert.equal(Object.isFrozen(created), true);
+  assert.throws(() => {
+    Object.assign(created as Record<string, unknown>, {
+      code: "return 'tampered';",
+      localElementId: "other-target",
+      snapshotToken: "other-snapshot",
+      sessionId: "other-session",
+      sessionRevision: 999,
+      expiresAt: "2099-01-01T00:00:00.000Z"
+    });
+  }, TypeError);
+
+  const consumed = store.consume("execution-immutable");
+  assert.equal(consumed.status, "ready");
+  if (consumed.status !== "ready") return;
+
+  assert.notStrictEqual(consumed.plan, created);
+  assert.equal(Object.isFrozen(consumed.plan), true);
+  assert.deepEqual(consumed.plan, {
+    ...planInput(),
+    executionId: "execution-immutable",
+    expiresAt: created.expiresAt
+  });
+});
+
 test("code digest changes when source changes", () => {
   assert.equal(
     digestDiagnosticCode("return 1"),
@@ -141,6 +170,37 @@ test("runtime wrapper enforces string and total-character serialization caps", a
   assert.ok(totalValue.value.reduce((total, entry) => total + entry.value.length, 0) <= 100_000);
 });
 
+test("runtime wrapper caps complete string-heavy results", async () => {
+  const result = await evaluateExpression(
+    runtimeExpression('return Array.from({ length: 6 }, () => "x".repeat(20_000));'),
+    fakeWindow()
+  );
+
+  assert.ok(JSON.stringify(result).length <= 100_000);
+});
+
+test("runtime wrapper caps complete numeric boolean and null-heavy results", async () => {
+  const result = await evaluateExpression(
+    runtimeExpression("return Array.from({ length: 100 }, () => Array.from({ length: 100 }, (_, index) => index % 3 === 0 ? index : index % 3 === 1 ? true : null));"),
+    fakeWindow()
+  );
+
+  assert.ok(JSON.stringify(result).length <= 100_000);
+});
+
+test("runtime wrapper caps complete exception results", async () => {
+  const result = await evaluateExpression(
+    runtimeExpression('const error = new Error("m".repeat(30_000)); error.stack = "s".repeat(30_000); throw error;'),
+    fakeWindow()
+  );
+  const exception = result as { status: string; message: string; stack?: string };
+
+  assert.equal(exception.status, "exception");
+  assert.ok(exception.message.length <= 20_000);
+  assert.ok((exception.stack?.length ?? 0) <= 20_000);
+  assert.ok(JSON.stringify(result).length <= 100_000);
+});
+
 test("runtime wrapper enforces depth and entry serialization caps", async () => {
   const depthResult = await evaluateExpression(
     runtimeExpression("let value = 0; for (let index = 0; index < 6; index += 1) value = { next: value }; return value;"),
@@ -153,6 +213,21 @@ test("runtime wrapper enforces depth and entry serialization caps", async () => 
   assert.equal(entriesValue.kind, "array");
   assert.equal(entriesValue.value.length, 100);
   assert.equal(entriesValue.truncated, true);
+});
+
+test("runtime wrapper limits huge sparse arrays without materializing every index", async () => {
+  const result = await evaluateExpression(
+    runtimeExpression(
+      'const value = []; value.length = 1_000_000_000; Array.from = () => { throw new Error("unexpected full array materialization"); }; return value;'
+    ),
+    fakeWindow()
+  );
+  const value = (result as { value: { kind: string; value: unknown[]; truncated: boolean } }).value;
+
+  assert.equal(value.kind, "array");
+  assert.equal(value.value.length, 100);
+  assert.equal(value.truncated, true);
+  assert.doesNotMatch(JSON.stringify(result), /unexpected full array materialization/);
 });
 
 test("runtime wrapper rejects stale targets", async () => {
