@@ -20,6 +20,7 @@ export type MessageKey =
   | "panel.explorer"
   | "panel.properties"
   | "panel.selector"
+  | "panel.javascript"
   | "panel.tableData"
   | "panel.tests"
   | "chrome.cardTitle"
@@ -139,6 +140,61 @@ export type MessageKey =
   | "selector.export.playwright"
   | "selector.export.selenium"
   | "selector.copy"
+  | "javascript.summary"
+  | "javascript.emptySummary"
+  | "javascript.empty"
+  | "javascript.emptyUnavailable"
+  | "javascript.editorTitle"
+  | "javascript.strategy.title"
+  | "javascript.strategy.domQuery"
+  | "javascript.strategy.treeTraversal"
+  | "javascript.strategy.contextTraversal"
+  | "javascript.target.title"
+  | "javascript.target.page"
+  | "javascript.target.url"
+  | "javascript.target.element"
+  | "javascript.target.context"
+  | "javascript.risk.title"
+  | "javascript.risk.arbitraryCode"
+  | "javascript.risk.domMutation"
+  | "javascript.suggestions.title"
+  | "javascript.suggestions.empty"
+  | "javascript.suggestion.refresh-snapshot"
+  | "javascript.suggestion.add-stable-constraint"
+  | "javascript.suggestion.avoid-dynamic-attribute"
+  | "javascript.suggestion.use-context-traversal"
+  | "javascript.suggestion.oopif-session-routing"
+  | "javascript.suggestion.reduce-traversal-scope"
+  | "javascript.validation.empty-code"
+  | "javascript.validation.code-too-large"
+  | "javascript.prepare"
+  | "javascript.preparing"
+  | "javascript.prepared"
+  | "javascript.prepared.target"
+  | "javascript.prepared.expiresAt"
+  | "javascript.prepared.codeDigest"
+  | "javascript.confirm"
+  | "javascript.executeOnce"
+  | "javascript.executing"
+  | "javascript.preparation.rejected"
+  | "javascript.preparation.empty-code"
+  | "javascript.preparation.code-too-large"
+  | "javascript.preparation.stale-snapshot"
+  | "javascript.preparation.invalid-element"
+  | "javascript.preparation.session-unavailable"
+  | "javascript.result.success"
+  | "javascript.result.exception"
+  | "javascript.result.timeout"
+  | "javascript.result.staleTarget"
+  | "javascript.result.validationError"
+  | "javascript.result.connectionError"
+  | "javascript.result.mutated"
+  | "javascript.result.notMutated"
+  | "javascript.attribute.title"
+  | "javascript.attribute.name"
+  | "javascript.attribute.value"
+  | "javascript.attribute.review"
+  | "javascript.attribute.nameRequired"
   | "table.rows"
   | "table.columns"
   | "table.selectedRows"
@@ -241,6 +297,7 @@ export const messages: Record<"zh-CN" | "en-US", Record<MessageKey, string>> = {
     "panel.explorer": "结构",
     "panel.properties": "属性",
     "panel.selector": "Selector",
+    "panel.javascript": "JS 诊断",
     "panel.tableData": "表格数据",
     "panel.tests": "测试页面",
     "chrome.cardTitle": "Chrome 调试实例",
@@ -360,6 +417,61 @@ export const messages: Record<"zh-CN" | "en-US", Record<MessageKey, string>> = {
     "selector.export.playwright": "Playwright",
     "selector.export.selenium": "Selenium",
     "selector.copy": "复制导出内容",
+    "javascript.summary": "受控单次执行",
+    "javascript.emptySummary": "未选择元素",
+    "javascript.empty": "连接页面并选择元素后，可准备受控 JavaScript 诊断。",
+    "javascript.emptyUnavailable": "当前诊断占位节点无法执行 JavaScript。请选择可访问的页面元素。",
+    "javascript.editorTitle": "JavaScript 草稿",
+    "javascript.strategy.title": "诊断策略",
+    "javascript.strategy.domQuery": "DOM 查询",
+    "javascript.strategy.treeTraversal": "树遍历",
+    "javascript.strategy.contextTraversal": "上下文穿透",
+    "javascript.target.title": "执行目标",
+    "javascript.target.page": "页面",
+    "javascript.target.url": "URL",
+    "javascript.target.element": "元素",
+    "javascript.target.context": "上下文路径",
+    "javascript.risk.title": "执行风险",
+    "javascript.risk.arbitraryCode": "此功能会在所选页面上下文中运行任意 JavaScript。请在确认代码和目标后继续。",
+    "javascript.risk.domMutation": "此草稿会修改 DOM；成功后 UI Explorer 将刷新快照。",
+    "javascript.suggestions.title": "确定性建议",
+    "javascript.suggestions.empty": "当前目标无需额外建议。",
+    "javascript.suggestion.refresh-snapshot": "目标已过期，请刷新 DOM 快照后重新准备。",
+    "javascript.suggestion.add-stable-constraint": "添加稳定属性约束，使目标唯一。",
+    "javascript.suggestion.avoid-dynamic-attribute": "避免依赖疑似动态的 ID 或 class。",
+    "javascript.suggestion.use-context-traversal": "目标跨越 Frame 或 Shadow 边界，优先使用上下文穿透。",
+    "javascript.suggestion.oopif-session-routing": "目标位于跨进程 Frame；执行会路由到其所属调试 Session。",
+    "javascript.suggestion.reduce-traversal-scope": "缩小遍历范围或改用更具体的查询以避免超时。",
+    "javascript.validation.empty-code": "JavaScript 草稿不能为空。",
+    "javascript.validation.code-too-large": "JavaScript 草稿超过 50 KiB 限制。",
+    "javascript.prepare": "准备执行",
+    "javascript.preparing": "正在准备…",
+    "javascript.prepared": "预检已通过",
+    "javascript.prepared.target": "已绑定目标",
+    "javascript.prepared.expiresAt": "过期时间",
+    "javascript.prepared.codeDigest": "代码摘要",
+    "javascript.confirm": "我已核对页面、元素、代码和风险，并同意仅执行一次。",
+    "javascript.executeOnce": "执行一次",
+    "javascript.executing": "正在执行…",
+    "javascript.preparation.rejected": "无法准备执行",
+    "javascript.preparation.empty-code": "代码为空",
+    "javascript.preparation.code-too-large": "代码超过大小限制",
+    "javascript.preparation.stale-snapshot": "DOM 快照已过期",
+    "javascript.preparation.invalid-element": "元素不存在或不可执行",
+    "javascript.preparation.session-unavailable": "目标调试 Session 不可用",
+    "javascript.result.success": "执行成功",
+    "javascript.result.exception": "JavaScript 异常",
+    "javascript.result.timeout": "执行超时",
+    "javascript.result.staleTarget": "目标已过期",
+    "javascript.result.validationError": "执行请求无效",
+    "javascript.result.connectionError": "调试连接异常",
+    "javascript.result.mutated": "已修改 DOM，正在刷新快照。",
+    "javascript.result.notMutated": "本次诊断未声明 DOM 修改。",
+    "javascript.attribute.title": "临时编辑属性",
+    "javascript.attribute.name": "属性名",
+    "javascript.attribute.value": "属性值",
+    "javascript.attribute.review": "审阅 JavaScript",
+    "javascript.attribute.nameRequired": "请输入非空属性名。",
     "table.rows": "数据行",
     "table.columns": "列",
     "table.selectedRows": "已选行",
@@ -462,6 +574,7 @@ export const messages: Record<"zh-CN" | "en-US", Record<MessageKey, string>> = {
     "panel.explorer": "Structure",
     "panel.properties": "Properties",
     "panel.selector": "Selector",
+    "panel.javascript": "JS diagnostics",
     "panel.tableData": "Table data",
     "panel.tests": "Test pages",
     "chrome.cardTitle": "Chrome debug instance",
@@ -581,6 +694,61 @@ export const messages: Record<"zh-CN" | "en-US", Record<MessageKey, string>> = {
     "selector.export.playwright": "Playwright",
     "selector.export.selenium": "Selenium",
     "selector.copy": "Copy export",
+    "javascript.summary": "Controlled one-time execution",
+    "javascript.emptySummary": "No element selected",
+    "javascript.empty": "Connect a page and select an element to prepare a controlled JavaScript diagnostic.",
+    "javascript.emptyUnavailable": "JavaScript cannot run against this diagnostic placeholder. Select an accessible page element.",
+    "javascript.editorTitle": "JavaScript draft",
+    "javascript.strategy.title": "Diagnostic strategy",
+    "javascript.strategy.domQuery": "DOM query",
+    "javascript.strategy.treeTraversal": "Tree traversal",
+    "javascript.strategy.contextTraversal": "Context traversal",
+    "javascript.target.title": "Execution target",
+    "javascript.target.page": "Page",
+    "javascript.target.url": "URL",
+    "javascript.target.element": "Element",
+    "javascript.target.context": "Context path",
+    "javascript.risk.title": "Execution risks",
+    "javascript.risk.arbitraryCode": "This feature runs arbitrary JavaScript in the selected page context. Verify the code and target before continuing.",
+    "javascript.risk.domMutation": "This draft mutates the DOM. UI Explorer will refresh the snapshot after success.",
+    "javascript.suggestions.title": "Deterministic suggestions",
+    "javascript.suggestions.empty": "No additional suggestions for this target.",
+    "javascript.suggestion.refresh-snapshot": "The target is stale. Refresh the DOM snapshot and prepare again.",
+    "javascript.suggestion.add-stable-constraint": "Add a stable constraint so the target is unique.",
+    "javascript.suggestion.avoid-dynamic-attribute": "Avoid depending on an ID or class that appears dynamic.",
+    "javascript.suggestion.use-context-traversal": "The target crosses Frame or Shadow boundaries; prefer context traversal.",
+    "javascript.suggestion.oopif-session-routing": "The target is in an out-of-process frame; execution routes to its owning debug session.",
+    "javascript.suggestion.reduce-traversal-scope": "Reduce traversal scope or use a more specific query to avoid another timeout.",
+    "javascript.validation.empty-code": "The JavaScript draft cannot be empty.",
+    "javascript.validation.code-too-large": "The JavaScript draft exceeds the 50 KiB limit.",
+    "javascript.prepare": "Prepare execution",
+    "javascript.preparing": "Preparing…",
+    "javascript.prepared": "Preflight passed",
+    "javascript.prepared.target": "Bound target",
+    "javascript.prepared.expiresAt": "Expires at",
+    "javascript.prepared.codeDigest": "Code digest",
+    "javascript.confirm": "I verified the page, element, code, and risks and agree to run it once.",
+    "javascript.executeOnce": "Execute once",
+    "javascript.executing": "Executing…",
+    "javascript.preparation.rejected": "Execution could not be prepared",
+    "javascript.preparation.empty-code": "Code is empty",
+    "javascript.preparation.code-too-large": "Code exceeds the size limit",
+    "javascript.preparation.stale-snapshot": "The DOM snapshot is stale",
+    "javascript.preparation.invalid-element": "The element is missing or cannot be executed against",
+    "javascript.preparation.session-unavailable": "The target debug session is unavailable",
+    "javascript.result.success": "Execution succeeded",
+    "javascript.result.exception": "JavaScript exception",
+    "javascript.result.timeout": "Execution timed out",
+    "javascript.result.staleTarget": "Target is stale",
+    "javascript.result.validationError": "Execution request is invalid",
+    "javascript.result.connectionError": "Debug connection error",
+    "javascript.result.mutated": "The DOM changed; refreshing the snapshot.",
+    "javascript.result.notMutated": "This diagnostic did not declare a DOM mutation.",
+    "javascript.attribute.title": "Temporary attribute edit",
+    "javascript.attribute.name": "Attribute name",
+    "javascript.attribute.value": "Attribute value",
+    "javascript.attribute.review": "Review JavaScript",
+    "javascript.attribute.nameRequired": "Enter a non-empty attribute name.",
     "table.rows": "Data rows",
     "table.columns": "Columns",
     "table.selectedRows": "Selected rows",

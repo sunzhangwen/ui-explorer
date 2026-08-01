@@ -33,7 +33,9 @@
     "src/main/webSocketFrames.ts",
     "src/main/webSocketFrames.test.ts",
     "src/renderer/components/workbenchPresentation.ts",
-    "src/renderer/components/workbenchPresentation.test.ts"
+    "src/renderer/components/workbenchPresentation.test.ts",
+    "src/renderer/components/javascriptDiagnosticsState.ts",
+    "src/renderer/components/javascriptDiagnosticsState.test.ts"
   ],
   "exclude": []
 }

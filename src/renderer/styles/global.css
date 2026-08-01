@@ -1126,6 +1126,256 @@ select {
   overflow: hidden;
 }
 
+.editor-loading {
+  height: 190px;
+  background:
+    linear-gradient(90deg, transparent, rgb(var(--color-muted) / 0.08), transparent),
+    rgb(var(--color-panel) / 0.62);
+}
+
+.javascript-diagnostics-panel {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.javascript-target-card,
+.javascript-risk-card,
+.javascript-confirmation,
+.javascript-result {
+  border: 1px solid rgb(var(--color-border));
+  border-radius: var(--radius-ui);
+  background: rgb(var(--color-panel) / 0.54);
+}
+
+.javascript-target-card,
+.javascript-confirmation {
+  display: grid;
+  gap: var(--space-2);
+  padding: 10px;
+}
+
+.javascript-target-card h3,
+.javascript-risk-card h3,
+.javascript-confirmation h3,
+.javascript-result h3 {
+  margin: 0;
+  color: rgb(var(--color-muted));
+  font-size: var(--font-size-xs);
+  text-transform: uppercase;
+}
+
+.javascript-target-card dl,
+.javascript-confirmation dl {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+}
+
+.javascript-target-card dl div,
+.javascript-confirmation dl div {
+  display: grid;
+  grid-template-columns: var(--property-label-width) minmax(0, 1fr);
+  gap: var(--space-2);
+  font-size: var(--font-size-xs);
+}
+
+.javascript-target-card dt,
+.javascript-confirmation dt {
+  color: rgb(var(--color-muted));
+}
+
+.javascript-target-card dd,
+.javascript-confirmation dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+
+.javascript-strategies {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.javascript-strategies button,
+.javascript-action,
+.attribute-edit-form button {
+  min-width: 0;
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid rgb(var(--color-border));
+  border-radius: var(--radius-ui);
+  background: rgb(var(--color-panel) / 0.54);
+  color: rgb(var(--color-text));
+  font-size: var(--font-size-xs);
+}
+
+.javascript-strategies button.selected {
+  border-color: rgb(var(--color-accent));
+  background: rgb(var(--color-accent) / 0.14);
+  color: rgb(var(--color-accent));
+}
+
+.javascript-editor-shell {
+  min-height: 224px;
+}
+
+.javascript-risk-card,
+.javascript-result {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 8px;
+  padding: 10px;
+}
+
+.javascript-risk-card {
+  border-color: rgb(var(--color-warning) / 0.54);
+  background: rgb(var(--color-warning) / 0.08);
+  color: rgb(var(--color-warning));
+}
+
+.javascript-risk-card p,
+.javascript-result p,
+.javascript-validation {
+  margin: 4px 0 0;
+  color: rgb(var(--color-muted));
+  font-size: var(--font-size-xs);
+  line-height: 1.45;
+}
+
+.javascript-risk-card .mutation-warning,
+.javascript-validation {
+  color: rgb(var(--color-danger));
+}
+
+.javascript-suggestions ul {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+  padding-left: 18px;
+  color: rgb(var(--color-muted));
+  font-size: var(--font-size-xs);
+  line-height: 1.4;
+}
+
+.javascript-validation {
+  padding: 0 4px;
+}
+
+.javascript-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+}
+
+.javascript-action.primary {
+  border-color: rgb(var(--color-accent));
+  background: rgb(var(--color-accent) / 0.15);
+  color: rgb(var(--color-accent));
+}
+
+.javascript-action.danger {
+  border-color: rgb(var(--color-danger));
+  background: rgb(var(--color-danger) / 0.12);
+  color: rgb(var(--color-danger));
+}
+
+.javascript-action:disabled,
+.javascript-strategies button:disabled {
+  cursor: not-allowed;
+  border-color: rgb(var(--color-border));
+  opacity: 0.46;
+}
+
+.javascript-confirmation {
+  border-color: rgb(var(--color-warning) / 0.54);
+}
+
+.javascript-confirmation > label {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 7px;
+  color: rgb(var(--color-muted));
+  font-size: var(--font-size-xs);
+  line-height: 1.4;
+}
+
+.javascript-result[data-status="success"] {
+  border-color: rgb(var(--color-success) / 0.54);
+  color: rgb(var(--color-success));
+}
+
+.javascript-result[data-status="error"] {
+  border-color: rgb(var(--color-danger) / 0.54);
+  color: rgb(var(--color-danger));
+}
+
+.javascript-result strong {
+  display: block;
+  margin-top: 5px;
+  font-size: var(--font-size-xs);
+}
+
+.javascript-result pre {
+  max-height: 180px;
+  margin: 6px 0 0;
+  padding: 7px;
+  overflow: auto;
+  border-radius: var(--radius-ui);
+  background: rgb(var(--color-canvas) / 0.72);
+  color: rgb(var(--color-text));
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.attribute-edit-form {
+  display: grid;
+  gap: 7px;
+  margin-top: 4px;
+  padding-top: 10px;
+  border-top: 1px solid rgb(var(--color-border));
+}
+
+.attribute-edit-form label {
+  display: grid;
+  grid-template-columns: 74px minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+  color: rgb(var(--color-muted));
+  font-size: var(--font-size-xs);
+}
+
+.attribute-edit-form input {
+  min-width: 0;
+  height: 26px;
+  padding: 0 6px;
+  border: 1px solid rgb(var(--color-border));
+  border-radius: var(--radius-ui);
+  outline: 0;
+  background: rgb(var(--color-panel) / 0.62);
+  color: rgb(var(--color-text));
+  font-family: var(--font-mono);
+}
+
+.attribute-edit-form input[aria-invalid="true"] {
+  border-color: rgb(var(--color-danger));
+}
+
+.attribute-edit-form p {
+  margin: 0;
+  color: rgb(var(--color-danger));
+  font-size: var(--font-size-xs);
+}
+
 .editor-title {
   gap: 6px;
   height: 34px;

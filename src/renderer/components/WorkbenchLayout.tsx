@@ -1,4 +1,3 @@
-import Editor from "@monaco-editor/react";
 import {
   AlertTriangle,
   Box,
@@ -31,8 +30,8 @@ import {
   Table2,
   Waypoints
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
-import type { PointerEvent, ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { FormEvent, PointerEvent, ReactNode } from "react";
 import { analyzeElementAttributes, type AttributeLocatorMarker } from "../../shared/attributeInsights";
 import { getCaptureCountdown } from "../../shared/captureTiming";
 import { findElementSnapshot, flattenElementSnapshot, formatElementAttributes } from "../../shared/domSnapshot";
@@ -42,6 +41,7 @@ import type {
   TableExportSaveRequest,
   TableExportSaveResult
 } from "../../shared/ipc";
+import type { AttributeEditDraft } from "../../shared/javascriptDiagnostics";
 import {
   applySelectorEdit,
   diffSelectorCandidates,
@@ -67,6 +67,8 @@ import {
 import { useI18n } from "../i18n/I18nProvider";
 import type { MessageKey } from "../i18n/messages";
 import { useAppStore } from "../store/useAppStore";
+import { JavaScriptDiagnosticsPanel } from "./JavaScriptDiagnosticsPanel";
+import { MonacoCodeEditor } from "./MonacoCodeEditor";
 import {
   buildWorkbenchExports,
   findTreeSearchMatches,
@@ -127,6 +129,7 @@ export function WorkbenchLayout(): JSX.Element {
     monitorBrowserConnection,
     openChromePage,
     panelSizes,
+    prepareJavaScriptDiagnostic,
     refreshDomSnapshot,
     selectBrowserTarget,
     selectElement,
@@ -134,6 +137,7 @@ export function WorkbenchLayout(): JSX.Element {
     getPickedElementId,
     rightPanelSections,
     saveTableExport,
+    executeJavaScriptDiagnostic,
     selectedBrowserTargetId,
     selectedElementId,
     selectionRecovery,
@@ -169,6 +173,8 @@ export function WorkbenchLayout(): JSX.Element {
   const [captureDelaySeconds, setCaptureDelaySeconds] = useState(3);
   const [captureDueAt, setCaptureDueAt] = useState<number | null>(null);
   const [captureClock, setCaptureClock] = useState(() => Date.now());
+  const [requestedAttributeEdit, setRequestedAttributeEdit] =
+    useState<AttributeEditDraft | null>(null);
   const captureCountdown = getCaptureCountdown(captureDueAt, captureClock);
 
   useEffect(() => {
@@ -365,6 +371,20 @@ export function WorkbenchLayout(): JSX.Element {
     setSelectorDrafts((current) => ({ ...current, [candidate.id]: edited }));
   };
 
+  const requestAttributeEdit = useCallback(
+    (edit: AttributeEditDraft) => {
+      setRequestedAttributeEdit(edit);
+      if (!rightPanelSections.javascript) {
+        toggleRightPanelSection("javascript");
+      }
+    },
+    [rightPanelSections.javascript, toggleRightPanelSection]
+  );
+  const clearRequestedAttributeEdit = useCallback(
+    () => setRequestedAttributeEdit(null),
+    []
+  );
+
   const toggleTreeNode = (elementId: string) => {
     setCollapsedNodeIds((current) => {
       const next = new Set(current);
@@ -474,6 +494,9 @@ export function WorkbenchLayout(): JSX.Element {
     : selectedElement?.diagnostic
       ? t(getDiagnosticPresentation(selectedElement.diagnostic).messageKey)
       : "-";
+  const javascriptSummary = selectedElement
+    ? `${selectedElement.tagName ?? selectedElement.nodeName} / ${t("javascript.summary")}`
+    : t("javascript.emptySummary");
   const exportSummary = selectorExports ? t(`selector.export.${exportFormat}`) : "-";
   const tablePanelSummary = tableSummary
     ? `${tableSummary.rows} ${t("table.rows")} / ${tableSummary.columns} ${t("table.columns")}`
@@ -853,7 +876,11 @@ export function WorkbenchLayout(): JSX.Element {
             title={t("properties.selected")}
             onToggle={() => toggleRightPanelSection("element")}
           >
-            <ElementDetails element={selectedElement} root={domSnapshot?.root ?? null} />
+            <ElementDetails
+              element={selectedElement}
+              root={domSnapshot?.root ?? null}
+              onEditAttribute={requestAttributeEdit}
+            />
           </CollapsibleSection>
 
           <CollapsibleSection
@@ -873,6 +900,29 @@ export function WorkbenchLayout(): JSX.Element {
               drafts={selectorDrafts}
               onSelectCandidate={setSelectedCandidateId}
               onEdit={editSelector}
+            />
+          </CollapsibleSection>
+
+          <CollapsibleSection
+            icon={<Code2 size={15} />}
+            open={rightPanelSections.javascript}
+            summary={javascriptSummary}
+            title={t("panel.javascript")}
+            onToggle={() => toggleRightPanelSection("javascript")}
+          >
+            <JavaScriptDiagnosticsPanel
+              key={`${selectedBrowserTargetId ?? "target"}-${domSnapshot?.capturedAt ?? "snapshot"}`}
+              element={selectedElement}
+              root={domSnapshot?.root ?? null}
+              candidate={selectedCandidate}
+              browserTarget={selectedTarget}
+              snapshotToken={domSnapshot?.snapshotToken ?? null}
+              theme={theme}
+              requestedAttributeEdit={requestedAttributeEdit}
+              onAttributeEditConsumed={clearRequestedAttributeEdit}
+              onPrepare={prepareJavaScriptDiagnostic}
+              onExecute={executeJavaScriptDiagnostic}
+              onMutationComplete={refreshDomSnapshot}
             />
           </CollapsibleSection>
 
@@ -920,7 +970,7 @@ export function WorkbenchLayout(): JSX.Element {
                   <Copy size={13} />
                 </button>
               </div>
-              <Editor
+              <MonacoCodeEditor
                 height="190px"
                 language={exportFormat === "json" ? "json" : exportFormat === "playwright" ? "typescript" : "python"}
                 value={previewSnippet}
@@ -1294,7 +1344,7 @@ function TableDataPanel({
             </ul>
           </div>
         ) : (
-          <Editor
+          <MonacoCodeEditor
             height="170px"
             language={format === "json" ? "json" : format === "markdown" ? "markdown" : "plaintext"}
             value={preview}
@@ -1761,13 +1811,18 @@ function VirtualTree({
 
 function ElementDetails({
   element,
+  onEditAttribute,
   root
 }: {
   element: ElementSnapshot | null;
+  onEditAttribute: (edit: AttributeEditDraft) => void;
   root: ElementSnapshot | null;
 }): JSX.Element {
   const { t } = useI18n();
   const [attributeQuery, setAttributeQuery] = useState("");
+  const [attributeName, setAttributeName] = useState("");
+  const [attributeValue, setAttributeValue] = useState("");
+  const [attributeNameError, setAttributeNameError] = useState(false);
   const attributeInsights = useMemo(
     () => analyzeElementAttributes(root, element?.id ?? null, attributeQuery),
     [attributeQuery, element?.id, root]
@@ -1784,6 +1839,16 @@ function ElementDetails({
   const contextPaths = getContextPathLabels(context);
   const diagnosticPresentation = element.diagnostic ? getDiagnosticPresentation(element.diagnostic) : null;
   const visibilityMessageKey = getVisibilityMessageKey(element.visible);
+  const reviewAttributeEdit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const normalizedName = attributeName.trim();
+    if (!normalizedName) {
+      setAttributeNameError(true);
+      return;
+    }
+    setAttributeNameError(false);
+    onEditAttribute({ attributeName: normalizedName, attributeValue });
+  };
 
   return (
     <div className="property-stack">
@@ -1864,6 +1929,33 @@ function ElementDetails({
             </div>
           ))
         )}
+        {!element.diagnostic ? (
+          <form className="attribute-edit-form" onSubmit={reviewAttributeEdit}>
+            <h3>{t("javascript.attribute.title")}</h3>
+            <label>
+              <span>{t("javascript.attribute.name")}</span>
+              <input
+                value={attributeName}
+                aria-invalid={attributeNameError}
+                onChange={(event) => {
+                  setAttributeName(event.currentTarget.value);
+                  if (attributeNameError) setAttributeNameError(false);
+                }}
+              />
+            </label>
+            <label>
+              <span>{t("javascript.attribute.value")}</span>
+              <input
+                value={attributeValue}
+                onChange={(event) => setAttributeValue(event.currentTarget.value)}
+              />
+            </label>
+            {attributeNameError ? (
+              <p role="alert">{t("javascript.attribute.nameRequired")}</p>
+            ) : null}
+            <button type="submit">{t("javascript.attribute.review")}</button>
+          </form>
+        ) : null}
       </section>
     </div>
   );
