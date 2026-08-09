@@ -3,8 +3,10 @@ import type {
   ContextBoundary,
   ElementNodeKind,
   ElementSnapshot,
+  JavaScriptDiagnosticValue,
   SnapshotDiagnostic
 } from "../../shared/ipc.js";
+import type { JavaScriptDiagnosticStrategy } from "../../shared/javascriptDiagnostics.js";
 import {
   buildSelectorExports,
   buildUnavailableContextExports,
@@ -106,6 +108,26 @@ export function getTreeNodeBadgeMessageKey(node: ElementSnapshot): MessageKey | 
 
 export function getVisibilityMessageKey(visible: boolean | undefined): MessageKey | null {
   return visible === undefined ? null : visible ? "properties.visible" : "properties.hidden";
+}
+
+export function getJavaScriptDiagnosticTruncationMessageKey(
+  value: JavaScriptDiagnosticValue
+): "javascript.result.truncated" | null {
+  return (value.kind === "string" || value.kind === "object" || value.kind === "array") &&
+    value.truncated
+    ? "javascript.result.truncated"
+    : null;
+}
+
+export function getJavaScriptStrategyButtonPresentation(
+  current: JavaScriptDiagnosticStrategy,
+  strategy: JavaScriptDiagnosticStrategy
+): { className: string; "aria-pressed": boolean } {
+  const selected = current === strategy;
+  return {
+    className: selected ? "selected" : "",
+    "aria-pressed": selected
+  };
 }
 
 export function buildWorkbenchExports(

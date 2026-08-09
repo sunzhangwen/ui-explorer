@@ -1,13 +1,23 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import type { ContextBoundary, ElementNodeKind, ElementSnapshot, SnapshotDiagnostic } from "../../shared/ipc.js";
+import type {
+  ContextBoundary,
+  ElementNodeKind,
+  ElementSnapshot,
+  JavaScriptDiagnosticValue,
+  SnapshotDiagnostic
+} from "../../shared/ipc.js";
+import type { JavaScriptDiagnosticStrategy } from "../../shared/javascriptDiagnostics.js";
 import type { SelectorCandidate, SelectorLayer } from "../../shared/selector.js";
 import type { ExtractedTable } from "../../shared/tableExtraction.js";
+import { messages } from "../i18n/messages.js";
 import {
   buildWorkbenchExports,
   findTreeSearchMatches,
   getContextPathLabels,
   getDiagnosticPresentation,
+  getJavaScriptDiagnosticTruncationMessageKey,
+  getJavaScriptStrategyButtonPresentation,
   getSelectorLayerMessageKey,
   getTableConfidenceMessageKey,
   getTableSelectionSummary,
@@ -20,6 +30,53 @@ import {
   isTreeNodeHighlightable,
   isTreeNodeSelectable
 } from "./workbenchPresentation.js";
+
+test("truncated serialized diagnostic values surface a localized warning", () => {
+  const truncatedValues: JavaScriptDiagnosticValue[] = [
+    { kind: "string", value: "partial", truncated: true },
+    { kind: "object", value: { partial: true }, truncated: true },
+    { kind: "array", value: ["partial"], truncated: true }
+  ];
+
+  for (const value of truncatedValues) {
+    assert.equal(
+      getJavaScriptDiagnosticTruncationMessageKey(value),
+      "javascript.result.truncated"
+    );
+  }
+  assert.equal(
+    getJavaScriptDiagnosticTruncationMessageKey({
+      kind: "string",
+      value: "complete",
+      truncated: false
+    }),
+    null
+  );
+  assert.equal(
+    getJavaScriptDiagnosticTruncationMessageKey({ kind: "number", value: 1 }),
+    null
+  );
+  assert.equal(messages["zh-CN"]["javascript.result.truncated"], "结果已截断");
+  assert.equal(messages["en-US"]["javascript.result.truncated"], "Result truncated");
+});
+
+test("diagnostic strategy button presentation exposes pressed state", () => {
+  const strategies: JavaScriptDiagnosticStrategy[] = [
+    "dom-query",
+    "tree-traversal",
+    "context-traversal"
+  ];
+
+  for (const strategy of strategies) {
+    assert.deepEqual(
+      getJavaScriptStrategyButtonPresentation("tree-traversal", strategy),
+      {
+        className: strategy === "tree-traversal" ? "selected" : "",
+        "aria-pressed": strategy === "tree-traversal"
+      }
+    );
+  }
+});
 
 function createNode(kind: ElementNodeKind, id: string): ElementSnapshot {
   const nodeType = kind === "frame" ? 9 : kind === "shadow" ? 11 : kind === "diagnostic" ? 8 : 1;

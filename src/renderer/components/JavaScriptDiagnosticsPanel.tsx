@@ -30,6 +30,10 @@ import {
   type DiagnosticDraftBinding
 } from "./javascriptDiagnosticsState";
 import { MonacoCodeEditor } from "./MonacoCodeEditor";
+import {
+  getJavaScriptDiagnosticTruncationMessageKey,
+  getJavaScriptStrategyButtonPresentation
+} from "./workbenchPresentation";
 
 export type JavaScriptDiagnosticsPanelProps = {
   element: ElementSnapshot | null;
@@ -269,7 +273,7 @@ export function JavaScriptDiagnosticsPanel({
           <button
             type="button"
             key={strategy}
-            className={state.strategy === strategy ? "selected" : ""}
+            {...getJavaScriptStrategyButtonPresentation(state.strategy, strategy)}
             onClick={() => selectStrategy(strategy)}
           >
             {t(getStrategyMessageKey(strategy))}
@@ -400,19 +404,24 @@ export function JavaScriptDiagnosticsPanel({
 function DiagnosticResult({ result }: { result: ExecuteJavaScriptDiagnosticResult }): JSX.Element {
   const { t } = useI18n();
   switch (result.status) {
-    case "success":
+    case "success": {
+      const truncationMessageKey = getJavaScriptDiagnosticTruncationMessageKey(result.value);
       return (
         <section className="javascript-result" data-status="success">
           <CheckCircle2 size={15} />
           <div>
             <h3>{t("javascript.result.success")}</h3>
             <pre>{formatDiagnosticValue(result.value)}</pre>
+            {truncationMessageKey ? (
+              <p className="javascript-result-truncated">{t(truncationMessageKey)}</p>
+            ) : null}
             <p>
               {t(result.mutatedDom ? "javascript.result.mutated" : "javascript.result.notMutated")}
             </p>
           </div>
         </section>
       );
+    }
     case "exception":
       return (
         <DiagnosticFailure

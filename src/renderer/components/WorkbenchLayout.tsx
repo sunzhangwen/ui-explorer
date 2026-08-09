@@ -1832,6 +1832,12 @@ function ElementDetails({
     [attributeQuery, element?.id, root]
   );
 
+  useEffect(() => {
+    setAttributeName("");
+    setAttributeValue("");
+    setAttributeNameError(false);
+  }, [element?.id]);
+
   if (!element) {
     return <p className="empty-copy">{t("empty.properties")}</p>;
   }

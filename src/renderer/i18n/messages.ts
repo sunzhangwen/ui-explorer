@@ -188,6 +188,7 @@ export type MessageKey =
   | "javascript.result.staleTarget"
   | "javascript.result.validationError"
   | "javascript.result.connectionError"
+  | "javascript.result.truncated"
   | "javascript.result.mutated"
   | "javascript.result.notMutated"
   | "javascript.attribute.title"
@@ -465,6 +466,7 @@ export const messages: Record<"zh-CN" | "en-US", Record<MessageKey, string>> = {
     "javascript.result.staleTarget": "目标已过期",
     "javascript.result.validationError": "执行请求无效",
     "javascript.result.connectionError": "调试连接异常",
+    "javascript.result.truncated": "结果已截断",
     "javascript.result.mutated": "已修改 DOM，正在刷新快照。",
     "javascript.result.notMutated": "本次诊断未声明 DOM 修改。",
     "javascript.attribute.title": "临时编辑属性",
@@ -742,6 +744,7 @@ export const messages: Record<"zh-CN" | "en-US", Record<MessageKey, string>> = {
     "javascript.result.staleTarget": "Target is stale",
     "javascript.result.validationError": "Execution request is invalid",
     "javascript.result.connectionError": "Debug connection error",
+    "javascript.result.truncated": "Result truncated",
     "javascript.result.mutated": "The DOM changed; refreshing the snapshot.",
     "javascript.result.notMutated": "This diagnostic did not declare a DOM mutation.",
     "javascript.attribute.title": "Temporary attribute edit",
