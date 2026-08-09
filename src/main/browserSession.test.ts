@@ -706,6 +706,24 @@ test("JavaScript diagnostic execution accepts an empty runtime exception message
   );
 });
 
+test("JavaScript diagnostic execution accepts an empty stale-target message", async () => {
+  const { connection, session, snapshot } = await createConnectedOopifSession();
+  connection.diagnosticRuntimeHandler = () => ({
+    result: {
+      type: "object",
+      value: { status: "stale-target", message: "" }
+    }
+  });
+  const prepared = await prepareChildDiagnostic(session, snapshot);
+  assert.equal(prepared.status, "prepared");
+  if (prepared.status !== "prepared") return;
+
+  assert.deepEqual(
+    await session.executeJavaScriptDiagnostic({ executionId: prepared.executionId }),
+    { status: "stale-target", message: "" }
+  );
+});
+
 test("JavaScript diagnostic execution rejects oversized runtime results", async () => {
   const { connection, session, snapshot } = await createConnectedOopifSession();
   connection.diagnosticRuntimeHandler = () => ({

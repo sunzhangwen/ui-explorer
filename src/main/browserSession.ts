@@ -985,7 +985,7 @@ function parseDiagnosticRuntimeResult(value: unknown): DiagnosticRuntimeResult |
   }
   if (status === "stale-target") {
     const message = readString(value, "message");
-    return message ? { status, message } : null;
+    return message === undefined ? null : { status, message };
   }
   return null;
 }
