@@ -12,14 +12,15 @@ import type {
   HighlightElementsRequest,
   HighlightResult,
   PrepareJavaScriptDiagnosticRequest,
-  PrepareJavaScriptDiagnosticResult
+  PrepareJavaScriptDiagnosticResult,
+  JavaScriptDiagnosticValue
 } from "../shared/ipc.js";
 import {
   JAVASCRIPT_DIAGNOSTIC_TIMEOUT_MS,
   validateJavaScriptDiagnosticCode
 } from "../shared/javascriptDiagnostics.js";
 import { ELEMENT_PICKER_SCRIPT, GET_PICKED_ELEMENT_SCRIPT, HIGHLIGHT_SCRIPT, SNAPSHOT_SCRIPT } from "./browserScripts.js";
-import { CdpConnection, type CdpEvent } from "./cdpConnection.js";
+import { CdpConnection, type CdpEvent, type CdpSendOptions } from "./cdpConnection.js";
 import { readBrowserVersion } from "./browserDiscovery.js";
 import {
   appendUnavailableContextDiagnostics,
@@ -66,7 +67,8 @@ export type BrowserSessionConnection = {
   send: <T>(
     method: string,
     params?: Record<string, unknown>,
-    sessionId?: string
+    sessionId?: string,
+    options?: CdpSendOptions
   ) => Promise<T>;
 };
 
@@ -481,7 +483,7 @@ export class BrowserSession {
       snapshotToken: plan.snapshotToken
     });
     try {
-      const response = await this.targetClient.send<RuntimeEvaluateResult<DiagnosticRuntimeResult>>(
+      const response = await this.targetClient.send<unknown>(
         "Runtime.evaluate",
         {
           expression,
@@ -489,17 +491,26 @@ export class BrowserSession {
           returnByValue: true,
           timeout: JAVASCRIPT_DIAGNOSTIC_TIMEOUT_MS
         },
-        plan.sessionId
+        plan.sessionId,
+        {
+          timeoutMs: JAVASCRIPT_DIAGNOSTIC_TIMEOUT_MS,
+          timeoutMessage: `Runtime.evaluate timed out after ${JAVASCRIPT_DIAGNOSTIC_TIMEOUT_MS} ms`
+        }
       );
-      if (response.exceptionDetails) {
-        return mapDiagnosticExceptionDetails(response.exceptionDetails);
+      if (!isRecordValue(response)) {
+        return invalidDiagnosticRuntimeResult();
       }
-      const result = response.result.value;
+      const exceptionDetails = readRecord(response, "exceptionDetails");
+      if (exceptionDetails) {
+        return mapDiagnosticExceptionDetails(exceptionDetails);
+      }
+      const remoteObject = readRecord(response, "result");
+      if (!remoteObject) {
+        return invalidDiagnosticRuntimeResult();
+      }
+      const result = parseDiagnosticRuntimeResult(remoteObject.value);
       if (!result) {
-        return {
-          status: "connection-error",
-          message: response.result.description ?? "Runtime evaluation returned no diagnostic result."
-        };
+        return invalidDiagnosticRuntimeResult();
       }
       if (result.status === "success") {
         return {
@@ -913,21 +924,79 @@ function stripRawSessionId(boundary: NonNullable<ElementSnapshot["context"]>[num
 }
 
 function mapDiagnosticExceptionDetails(
-  details: NonNullable<RuntimeEvaluateResult<unknown>["exceptionDetails"]>
+  details: Record<string, unknown>
 ): ExecuteJavaScriptDiagnosticResult {
-  const description = details.exception?.description;
+  const description = readString(readRecord(details, "exception") ?? {}, "description");
+  const text = readString(details, "text");
   if (description) {
     const [message] = description.split(/\r?\n/, 1);
     return {
       status: "exception",
-      message: message || details.text || "Runtime evaluation failed.",
+      message: message || text || "Runtime evaluation failed.",
       ...(description.includes("\n") ? { stack: description } : {})
     };
   }
   return {
     status: "exception",
-    message: details.text ?? "Runtime evaluation failed."
+    message: text ?? "Runtime evaluation failed."
   };
+}
+
+function invalidDiagnosticRuntimeResult(): ExecuteJavaScriptDiagnosticResult {
+  return {
+    status: "connection-error",
+    message: "Runtime evaluation returned an invalid diagnostic result."
+  };
+}
+
+function parseDiagnosticRuntimeResult(value: unknown): DiagnosticRuntimeResult | null {
+  if (!isRecordValue(value)) return null;
+  const status = readString(value, "status");
+  if (status === "success") {
+    return isJavaScriptDiagnosticValue(value.value)
+      ? { status, value: value.value }
+      : null;
+  }
+  if (status === "exception") {
+    const message = readString(value, "message");
+    const stack = readString(value, "stack");
+    if (!message || ("stack" in value && stack === undefined)) return null;
+    return { status, message, ...(stack ? { stack } : {}) };
+  }
+  if (status === "stale-target") {
+    const message = readString(value, "message");
+    return message ? { status, message } : null;
+  }
+  return null;
+}
+
+function isJavaScriptDiagnosticValue(value: unknown): value is JavaScriptDiagnosticValue {
+  if (!isRecordValue(value)) return false;
+  switch (value.kind) {
+    case "undefined":
+    case "null":
+      return true;
+    case "boolean":
+      return typeof value.value === "boolean";
+    case "number":
+      return typeof value.value === "number" || typeof value.value === "string";
+    case "string":
+      return typeof value.value === "string" && typeof value.truncated === "boolean";
+    case "bigint":
+    case "symbol":
+    case "function":
+      return typeof value.value === "string";
+    case "dom-node":
+      return typeof value.tagName === "string" &&
+        typeof value.id === "string" &&
+        typeof value.className === "string" &&
+        typeof value.text === "string";
+    case "object":
+    case "array":
+      return "value" in value && typeof value.truncated === "boolean";
+    default:
+      return false;
+  }
 }
 
 export function parseRuntimeElementId(
@@ -951,6 +1020,10 @@ function readRecord(
   return typeof candidate === "object" && candidate !== null && !Array.isArray(candidate)
     ? candidate as Record<string, unknown>
     : undefined;
+}
+
+function isRecordValue(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function readString(value: Record<string, unknown>, key: string): string | undefined {

@@ -20,6 +20,12 @@ type CdpResponse<T> = {
 type PendingRequest = {
   resolve: (value: unknown) => void;
   reject: (error: Error) => void;
+  timeout?: ReturnType<typeof setTimeout>;
+};
+
+export type CdpSendOptions = {
+  timeoutMs?: number;
+  timeoutMessage?: string;
 };
 
 export type CdpEvent = {
@@ -34,12 +40,21 @@ export class CdpMessageRouter {
   private pending = new Map<number, PendingRequest>();
   private listeners = new Set<CdpEventListener>();
 
-  createPending<T>(id: number): Promise<T> {
+  createPending<T>(id: number, options: CdpSendOptions = {}): Promise<T> {
     return new Promise<T>((resolve, reject) => {
-      this.pending.set(id, {
+      const request: PendingRequest = {
         resolve: (value) => resolve(value as T),
         reject
-      });
+      };
+      if (typeof options.timeoutMs === "number" && options.timeoutMs >= 0) {
+        request.timeout = setTimeout(() => {
+          const pending = this.takePending(id);
+          pending?.reject(new Error(
+            options.timeoutMessage ?? `CDP command timed out after ${options.timeoutMs} ms.`
+          ));
+        }, options.timeoutMs);
+      }
+      this.pending.set(id, request);
     });
   }
 
@@ -71,11 +86,10 @@ export class CdpMessageRouter {
       return;
     }
 
-    const pending = this.pending.get(message.id);
+    const pending = this.takePending(message.id);
     if (!pending) {
       return;
     }
-    this.pending.delete(message.id);
 
     if (message.error) {
       pending.reject(new Error(message.error.message));
@@ -86,9 +100,18 @@ export class CdpMessageRouter {
 
   rejectPending(error: Error): void {
     for (const request of this.pending.values()) {
+      if (request.timeout) clearTimeout(request.timeout);
       request.reject(error);
     }
     this.pending.clear();
+  }
+
+  private takePending(id: number): PendingRequest | undefined {
+    const pending = this.pending.get(id);
+    if (!pending) return undefined;
+    this.pending.delete(id);
+    if (pending.timeout) clearTimeout(pending.timeout);
+    return pending;
   }
 }
 
@@ -138,14 +161,15 @@ export class CdpConnection {
   async send<T>(
     method: string,
     params?: Record<string, unknown>,
-    sessionId?: string
+    sessionId?: string,
+    options?: CdpSendOptions
   ): Promise<T> {
     if (!this.socket || this.socket.destroyed) {
       throw new Error("No CDP target is connected.");
     }
 
     const id = ++this.sequence;
-    const pending = this.router.createPending<T>(id);
+    const pending = this.router.createPending<T>(id, options);
     const payload: {
       id: number;
       method: string;

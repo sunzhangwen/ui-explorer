@@ -5,7 +5,7 @@ import {
   isBrowserLifecycleEvent,
   type BrowserSessionConnection
 } from "./browserSession.js";
-import type { CdpEvent } from "./cdpConnection.js";
+import type { CdpEvent, CdpSendOptions } from "./cdpConnection.js";
 import {
   ELEMENT_PICKER_SCRIPT,
   GET_PICKED_ELEMENT_SCRIPT,
@@ -563,9 +563,56 @@ test("JavaScript diagnostic execution routes once to the child session with boun
   assert.equal(commands[0]?.method, "Runtime.evaluate");
   assert.equal(commands[0]?.sessionId, "child-session");
   assert.equal(commands[0]?.params?.timeout, 5_000);
+  assert.equal(commands[0]?.options?.timeoutMs, 5_000);
+  assert.match(commands[0]?.options?.timeoutMessage ?? "", /Runtime\.evaluate timed out after 5000 ms/);
   assert.equal(commands[0]?.params?.awaitPromise, true);
   assert.equal(commands[0]?.params?.returnByValue, true);
   assert.match(String(commands[0]?.params?.expression), /const localElementId = "n-2";/);
+});
+
+test("JavaScript diagnostic execution rejects an unknown runtime status", async () => {
+  const { connection, session, snapshot } = await createConnectedOopifSession();
+  connection.diagnosticRuntimeHandler = () => ({
+    result: {
+      type: "object",
+      value: { status: "unexpected-status", message: "untrusted detail" }
+    }
+  });
+  const prepared = await prepareChildDiagnostic(session, snapshot);
+  assert.equal(prepared.status, "prepared");
+  if (prepared.status !== "prepared") return;
+
+  assert.deepEqual(
+    await session.executeJavaScriptDiagnostic({ executionId: prepared.executionId }),
+    {
+      status: "connection-error",
+      message: "Runtime evaluation returned an invalid diagnostic result."
+    }
+  );
+});
+
+test("JavaScript diagnostic execution rejects an unknown serialized value kind", async () => {
+  const { connection, session, snapshot } = await createConnectedOopifSession();
+  connection.diagnosticRuntimeHandler = () => ({
+    result: {
+      type: "object",
+      value: {
+        status: "success",
+        value: { kind: "unexpected-kind", value: "untrusted detail" }
+      }
+    }
+  });
+  const prepared = await prepareChildDiagnostic(session, snapshot);
+  assert.equal(prepared.status, "prepared");
+  if (prepared.status !== "prepared") return;
+
+  assert.deepEqual(
+    await session.executeJavaScriptDiagnostic({ executionId: prepared.executionId }),
+    {
+      status: "connection-error",
+      message: "Runtime evaluation returned an invalid diagnostic result."
+    }
+  );
 });
 
 test("JavaScript diagnostic execution consumes the plan before awaiting CDP", async () => {
@@ -802,6 +849,7 @@ type RecordedCommand = {
   method: string;
   params?: Record<string, unknown>;
   sessionId?: string;
+  options?: CdpSendOptions;
 };
 
 class RecordingConnection implements BrowserSessionConnection {
@@ -844,9 +892,10 @@ class RecordingConnection implements BrowserSessionConnection {
   async send<T>(
     method: string,
     params?: Record<string, unknown>,
-    sessionId?: string
+    sessionId?: string,
+    options?: CdpSendOptions
   ): Promise<T> {
-    this.sent.push({ method, params, sessionId });
+    this.sent.push({ method, params, sessionId, ...(options ? { options } : {}) });
     if (method === "Target.attachToTarget") {
       return { sessionId: "root-session" } as T;
     }
