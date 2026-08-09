@@ -112,7 +112,7 @@ export function getJavaScriptDiagnosticSuggestions(input: {
   if ((input.element.context?.length ?? 0) > 0) {
     suggestions.add("use-context-traversal");
   }
-  if (input.element.context?.some((boundary) => boundary.sessionId)) {
+  if (input.element.context?.some((boundary) => boundary.targetId)) {
     suggestions.add("oopif-session-routing");
   }
   if (input.failure === "timeout") {

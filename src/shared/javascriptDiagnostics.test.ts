@@ -345,6 +345,25 @@ test("diagnostic suggestions are empty for a unique local selector", () => {
   );
 });
 
+test("diagnostic suggestions do not treat a same-session boundary as OOPIF routing", () => {
+  assert.deepEqual(
+    getJavaScriptDiagnosticSuggestions({
+      element: button({
+        id: "root-session::save-button",
+        context: [{
+          kind: "frame",
+          hostNodeId: "root-session::settings-frame",
+          hostTagName: "iframe",
+          hostAttributes: { title: "Settings" },
+          sessionId: "root-session"
+        }]
+      }),
+      candidate: candidate("button")
+    }),
+    ["use-context-traversal"]
+  );
+});
+
 test("diagnostic suggestions add a stable constraint for missing, multiple, and mismatched selectors", () => {
   for (const [status, matchCount] of [
     ["missing", 0],
