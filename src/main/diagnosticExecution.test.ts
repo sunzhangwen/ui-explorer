@@ -27,6 +27,17 @@ async function evaluateExpression(expression: string, fakeWindow: Record<string,
   return JSON.parse(JSON.stringify(await value));
 }
 
+async function evaluateExpressionAfter(
+  setup: string,
+  expression: string,
+  fakeWindow: Record<string, unknown>
+): Promise<unknown> {
+  const context = { window: fakeWindow };
+  runInNewContext(setup, context);
+  const value = runInNewContext(expression, context);
+  return JSON.parse(JSON.stringify(await value));
+}
+
 function fakeWindow(target: Record<string, unknown> = connectedTarget()): Record<string, unknown> {
   return {
     __uiExplorerSnapshotToken: "snapshot-a",
@@ -273,6 +284,34 @@ test("runtime wrapper keeps the complete result capped when user code replaces J
   );
 
   assert.equal((result as { status: string }).status, "success");
+  assert.ok(JSON.stringify(result).length <= 100_000);
+});
+
+test("runtime wrapper returns a bounded exception when JSON.stringify was already poisoned", async () => {
+  const result = await evaluateExpressionAfter(
+    'Object.defineProperty(JSON, "stringify", { get() { throw new Error("x".repeat(200_000)); } });',
+    runtimeExpression("return 1;"),
+    fakeWindow()
+  );
+
+  assert.deepEqual(result, {
+    status: "exception",
+    message: "Diagnostic runtime initialization failed."
+  });
+  assert.ok(JSON.stringify(result).length <= 100_000);
+});
+
+test("runtime wrapper returns a bounded exception when Function.bind was already poisoned", async () => {
+  const result = await evaluateExpressionAfter(
+    'Object.defineProperty(Function.prototype, "bind", { get() { throw new Error("x".repeat(200_000)); } });',
+    runtimeExpression("return 1;"),
+    fakeWindow()
+  );
+
+  assert.deepEqual(result, {
+    status: "exception",
+    message: "Diagnostic runtime initialization failed."
+  });
   assert.ok(JSON.stringify(result).length <= 100_000);
 });
 

@@ -59,6 +59,11 @@ type DiagnosticRuntimeResult =
     }
   | Extract<ExecuteJavaScriptDiagnosticResult, { status: "exception" | "stale-target" }>;
 
+const DIAGNOSTIC_RESULT_MAX_CHARACTERS = 100_000;
+const DIAGNOSTIC_RESULT_MAX_STRING_CHARACTERS = 20_000;
+const DIAGNOSTIC_RESULT_MAX_COLLECTION_ENTRIES = 100;
+const DIAGNOSTIC_RESULT_MAX_DEPTH = 12;
+
 export type BrowserSessionConnection = {
   connect: (webSocketDebuggerUrl: string) => Promise<void>;
   disconnect: () => void;
@@ -508,19 +513,24 @@ export class BrowserSession {
       if (!remoteObject) {
         return invalidDiagnosticRuntimeResult();
       }
+      if (!isWithinDiagnosticRuntimeBounds(remoteObject.value)) {
+        return invalidDiagnosticRuntimeResult();
+      }
       const result = parseDiagnosticRuntimeResult(remoteObject.value);
       if (!result) {
         return invalidDiagnosticRuntimeResult();
       }
-      if (result.status === "success") {
-        return {
+      const executionResult: ExecuteJavaScriptDiagnosticResult = result.status === "success"
+        ? {
           ...result,
           mutatedDom: plan.intent === "mutate-dom"
-        };
-      }
-      return result;
+        }
+        : result;
+      return isWithinDiagnosticRuntimeBounds(executionResult)
+        ? executionResult
+        : invalidDiagnosticRuntimeResult();
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = truncateDiagnosticText(error instanceof Error ? error.message : String(error));
       return isRuntimeTimeoutError(error)
         ? { status: "timeout", message }
         : { status: "connection-error", message };
@@ -928,18 +938,28 @@ function mapDiagnosticExceptionDetails(
 ): ExecuteJavaScriptDiagnosticResult {
   const description = readString(readRecord(details, "exception") ?? {}, "description");
   const text = readString(details, "text");
-  if (description) {
-    const [message] = description.split(/\r?\n/, 1);
+  if (description !== undefined) {
+    const lineBreak = description.indexOf("\n");
+    const firstLineEnd = lineBreak < 0
+      ? DIAGNOSTIC_RESULT_MAX_STRING_CHARACTERS
+      : Math.min(lineBreak, DIAGNOSTIC_RESULT_MAX_STRING_CHARACTERS);
+    const firstLine = description.slice(0, firstLineEnd).replace(/\r$/, "");
+    const message = firstLine ||
+      (text === undefined ? "Runtime evaluation failed." : truncateDiagnosticText(text));
     return {
       status: "exception",
-      message: message || text || "Runtime evaluation failed.",
-      ...(description.includes("\n") ? { stack: description } : {})
+      message,
+      ...(lineBreak >= 0 ? { stack: truncateDiagnosticText(description) } : {})
     };
   }
   return {
     status: "exception",
-    message: text ?? "Runtime evaluation failed."
+    message: text === undefined ? "Runtime evaluation failed." : truncateDiagnosticText(text)
   };
+}
+
+function truncateDiagnosticText(value: string): string {
+  return value.slice(0, DIAGNOSTIC_RESULT_MAX_STRING_CHARACTERS);
 }
 
 function invalidDiagnosticRuntimeResult(): ExecuteJavaScriptDiagnosticResult {
@@ -960,14 +980,88 @@ function parseDiagnosticRuntimeResult(value: unknown): DiagnosticRuntimeResult |
   if (status === "exception") {
     const message = readString(value, "message");
     const stack = readString(value, "stack");
-    if (!message || ("stack" in value && stack === undefined)) return null;
-    return { status, message, ...(stack ? { stack } : {}) };
+    if (message === undefined || ("stack" in value && stack === undefined)) return null;
+    return { status, message, ...(stack === undefined ? {} : { stack }) };
   }
   if (status === "stale-target") {
     const message = readString(value, "message");
     return message ? { status, message } : null;
   }
   return null;
+}
+
+function isWithinDiagnosticRuntimeBounds(value: unknown): boolean {
+  let remaining = DIAGNOSTIC_RESULT_MAX_CHARACTERS;
+  const ancestors = new Set<object>();
+
+  const consume = (characters: number): boolean => {
+    remaining -= characters;
+    return remaining >= 0;
+  };
+
+  const visit = (candidate: unknown, depth: number): boolean => {
+    if (candidate === null) return consume(4);
+    switch (typeof candidate) {
+      case "string":
+        return candidate.length <= DIAGNOSTIC_RESULT_MAX_STRING_CHARACTERS &&
+          consume(jsonStringCharacterCount(candidate));
+      case "boolean":
+        return consume(candidate ? 4 : 5);
+      case "number":
+        return consume(Number.isFinite(candidate) ? String(candidate).length : 4);
+      case "undefined":
+        return consume(4);
+      case "object":
+        break;
+      default:
+        return false;
+    }
+
+    if (depth > DIAGNOSTIC_RESULT_MAX_DEPTH || ancestors.has(candidate)) return false;
+    ancestors.add(candidate);
+    try {
+      if (Array.isArray(candidate)) {
+        if (candidate.length > DIAGNOSTIC_RESULT_MAX_COLLECTION_ENTRIES || !consume(2)) return false;
+        for (let index = 0; index < candidate.length; index += 1) {
+          if (index > 0 && !consume(1)) return false;
+          if (!visit(candidate[index], depth + 1)) return false;
+        }
+        return true;
+      }
+
+      const entries = Object.entries(candidate);
+      if (entries.length > DIAGNOSTIC_RESULT_MAX_COLLECTION_ENTRIES || !consume(2)) return false;
+      for (let index = 0; index < entries.length; index += 1) {
+        const [key, entry] = entries[index];
+        if (key.length > DIAGNOSTIC_RESULT_MAX_STRING_CHARACTERS) return false;
+        if (index > 0 && !consume(1)) return false;
+        if (!consume(jsonStringCharacterCount(key) + 1) || !visit(entry, depth + 1)) return false;
+      }
+      return true;
+    } catch {
+      return false;
+    } finally {
+      ancestors.delete(candidate);
+    }
+  };
+
+  return visit(value, 0);
+}
+
+function jsonStringCharacterCount(value: string): number {
+  let characters = 2;
+  for (let index = 0; index < value.length; index += 1) {
+    const codeUnit = value.charCodeAt(index);
+    if (codeUnit === 0x22 || codeUnit === 0x5c || codeUnit === 0x08 || codeUnit === 0x09 ||
+        codeUnit === 0x0a || codeUnit === 0x0c || codeUnit === 0x0d) {
+      characters += 2;
+    } else if (codeUnit < 0x20) {
+      characters += 6;
+    } else {
+      characters += 1;
+    }
+  }
+  return characters;
 }
 
 function isJavaScriptDiagnosticValue(value: unknown): value is JavaScriptDiagnosticValue {

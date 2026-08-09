@@ -688,6 +688,106 @@ test("JavaScript diagnostic execution maps runtime exceptions and stale targets"
   );
 });
 
+test("JavaScript diagnostic execution accepts an empty runtime exception message", async () => {
+  const { connection, session, snapshot } = await createConnectedOopifSession();
+  connection.diagnosticRuntimeHandler = () => ({
+    result: {
+      type: "object",
+      value: { status: "exception", message: "" }
+    }
+  });
+  const prepared = await prepareChildDiagnostic(session, snapshot);
+  assert.equal(prepared.status, "prepared");
+  if (prepared.status !== "prepared") return;
+
+  assert.deepEqual(
+    await session.executeJavaScriptDiagnostic({ executionId: prepared.executionId }),
+    { status: "exception", message: "" }
+  );
+});
+
+test("JavaScript diagnostic execution rejects oversized runtime results", async () => {
+  const { connection, session, snapshot } = await createConnectedOopifSession();
+  connection.diagnosticRuntimeHandler = () => ({
+    result: {
+      type: "object",
+      value: {
+        status: "success",
+        value: {
+          kind: "array",
+          value: Array.from({ length: 6 }, () => ({
+            kind: "string",
+            value: "x".repeat(20_000),
+            truncated: false
+          })),
+          truncated: false
+        }
+      }
+    }
+  });
+  const prepared = await prepareChildDiagnostic(session, snapshot);
+  assert.equal(prepared.status, "prepared");
+  if (prepared.status !== "prepared") return;
+
+  assert.deepEqual(
+    await session.executeJavaScriptDiagnostic({ executionId: prepared.executionId }),
+    {
+      status: "connection-error",
+      message: "Runtime evaluation returned an invalid diagnostic result."
+    }
+  );
+});
+
+test("JavaScript diagnostic execution includes main-process fields in the result budget", async () => {
+  const { connection, session, snapshot } = await createConnectedOopifSession();
+  connection.diagnosticRuntimeHandler = () => ({
+    result: {
+      type: "object",
+      value: {
+        status: "success",
+        value: {
+          kind: "array",
+          value: Array.from({ length: 5 }, () => ({
+            kind: "string",
+            value: "x".repeat(19_935),
+            truncated: false
+          })),
+          truncated: false
+        }
+      }
+    }
+  });
+  const prepared = await prepareChildDiagnostic(session, snapshot);
+  assert.equal(prepared.status, "prepared");
+  if (prepared.status !== "prepared") return;
+
+  const result = await session.executeJavaScriptDiagnostic({ executionId: prepared.executionId });
+
+  assert.ok(JSON.stringify(result).length <= 100_000);
+  assert.equal(result.status, "connection-error");
+});
+
+test("JavaScript diagnostic execution accepts the runtime wrapper's maximum-depth shape", async () => {
+  const { connection, session, snapshot } = await createConnectedOopifSession();
+  let value: unknown = { kind: "object", value: "[Max depth]", truncated: true };
+  for (let depth = 0; depth < 5; depth += 1) {
+    value = { kind: "object", value: { next: value }, truncated: false };
+  }
+  connection.diagnosticRuntimeHandler = () => ({
+    result: {
+      type: "object",
+      value: { status: "success", value }
+    }
+  });
+  const prepared = await prepareChildDiagnostic(session, snapshot);
+  assert.equal(prepared.status, "prepared");
+  if (prepared.status !== "prepared") return;
+
+  const result = await session.executeJavaScriptDiagnostic({ executionId: prepared.executionId });
+
+  assert.equal(result.status, "success");
+});
+
 test("JavaScript diagnostic execution maps CDP exception details", async () => {
   const { connection, session, snapshot } = await createConnectedOopifSession();
   connection.diagnosticRuntimeHandler = () => ({
@@ -708,6 +808,29 @@ test("JavaScript diagnostic execution maps CDP exception details", async () => {
     message: "Error: CDP boom",
     stack: "Error: CDP boom\n    at diagnostic:1:1"
   });
+});
+
+test("JavaScript diagnostic execution bounds CDP exception details", async () => {
+  const { connection, session, snapshot } = await createConnectedOopifSession();
+  const description = `Error: ${"m".repeat(30_000)}\n${"s".repeat(30_000)}`;
+  connection.diagnosticRuntimeHandler = () => ({
+    result: { type: "object", description: "Promise rejected" },
+    exceptionDetails: {
+      text: `Uncaught ${"t".repeat(30_000)}`,
+      exception: { description }
+    }
+  });
+  const prepared = await prepareChildDiagnostic(session, snapshot);
+  assert.equal(prepared.status, "prepared");
+  if (prepared.status !== "prepared") return;
+
+  const result = await session.executeJavaScriptDiagnostic({ executionId: prepared.executionId });
+
+  assert.equal(result.status, "exception");
+  if (result.status !== "exception") return;
+  assert.ok(result.message.length <= 20_000);
+  assert.ok((result.stack?.length ?? 0) <= 20_000);
+  assert.ok(JSON.stringify(result).length <= 100_000);
 });
 
 test("JavaScript diagnostic execution distinguishes timeout and connection errors", async () => {
@@ -734,6 +857,23 @@ test("JavaScript diagnostic execution distinguishes timeout and connection error
     await disconnected.session.executeJavaScriptDiagnostic({ executionId: connectionPlan.executionId }),
     { status: "connection-error", message: "WebSocket closed" }
   );
+});
+
+test("JavaScript diagnostic execution bounds CDP command errors", async () => {
+  const { connection, session, snapshot } = await createConnectedOopifSession();
+  connection.diagnosticRuntimeHandler = () => {
+    throw new Error("x".repeat(30_000));
+  };
+  const prepared = await prepareChildDiagnostic(session, snapshot);
+  assert.equal(prepared.status, "prepared");
+  if (prepared.status !== "prepared") return;
+
+  const result = await session.executeJavaScriptDiagnostic({ executionId: prepared.executionId });
+
+  assert.equal(result.status, "connection-error");
+  if (result.status !== "connection-error") return;
+  assert.equal(result.message.length, 20_000);
+  assert.ok(JSON.stringify(result).length <= 100_000);
 });
 
 test("JavaScript diagnostic execution rejects navigation between preparation and execution", async () => {

@@ -99,6 +99,7 @@ export function buildDiagnosticRuntimeExpression(_input: {
   const expectedSnapshotToken = ${snapshotToken};
   const localElementId = ${localElementId};
   const source = ${code};
+  try {
   const maxDepth = 5;
   const maxEntries = 100;
   const maxStringCharacters = 20_000;
@@ -366,6 +367,9 @@ export function buildDiagnosticRuntimeExpression(_input: {
       stack = undefined;
     }
     return finalize({ status: "exception", message, ...(stack ? { stack } : {}) });
+  }
+  } catch {
+    return { status: "exception", message: "Diagnostic runtime initialization failed." };
   }
 })()`;
 }
