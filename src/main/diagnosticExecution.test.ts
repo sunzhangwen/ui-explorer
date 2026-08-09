@@ -64,6 +64,58 @@ test("execution plans expire and are consumed once", () => {
   assert.equal(store.consume("execution-1").status, "expired");
 });
 
+test("creating a plan removes expired entries", () => {
+  let now = 0;
+  const executionIds = ["execution-1", "execution-2"];
+  const store = new DiagnosticExecutionPlanStore({
+    now: () => now,
+    createId: () => executionIds.shift() ?? "unexpected-execution",
+    ttlMs: 1_000
+  });
+
+  store.create(planInput());
+  now = 1_001;
+  store.create(planInput());
+
+  assert.equal(store.consume("execution-1").status, "missing");
+  assert.equal(store.consume("execution-2").status, "ready");
+});
+
+test("consuming a plan removes other expired entries", () => {
+  let now = 0;
+  const executionIds = ["execution-1", "execution-2"];
+  const store = new DiagnosticExecutionPlanStore({
+    now: () => now,
+    createId: () => executionIds.shift() ?? "unexpected-execution",
+    ttlMs: 1_000
+  });
+
+  store.create(planInput());
+  now = 500;
+  store.create(planInput());
+  now = 1_001;
+
+  assert.equal(store.consume("execution-2").status, "ready");
+  assert.equal(store.consume("execution-1").status, "missing");
+});
+
+test("execution plan capacity evicts the oldest plan", () => {
+  const executionIds = ["execution-1", "execution-2", "execution-3"];
+  const capacityOptions = { maxPlans: 2 };
+  const store = new DiagnosticExecutionPlanStore({
+    createId: () => executionIds.shift() ?? "unexpected-execution",
+    ...capacityOptions
+  });
+
+  store.create(planInput());
+  store.create(planInput());
+  store.create(planInput());
+
+  assert.equal(store.consume("execution-1").status, "missing");
+  assert.equal(store.consume("execution-2").status, "ready");
+  assert.equal(store.consume("execution-3").status, "ready");
+});
+
 test("execution plans are immutable copies bound to their original input", () => {
   const store = new DiagnosticExecutionPlanStore({ createId: () => "execution-immutable" });
   const created = store.create(planInput());
@@ -177,6 +229,27 @@ test("runtime wrapper caps complete string-heavy results", async () => {
   );
 
   assert.ok(JSON.stringify(result).length <= 100_000);
+});
+
+test("runtime wrapper keeps the complete result capped when user code replaces JSON.stringify", async () => {
+  const result = await evaluateExpression(
+    runtimeExpression('JSON.stringify = () => "forged"; return Array.from({ length: 6 }, () => "x".repeat(20_000));'),
+    fakeWindow()
+  );
+
+  assert.equal((result as { status: string }).status, "success");
+  assert.ok(JSON.stringify(result).length <= 100_000);
+});
+
+test("runtime wrapper keeps entry limits when user code replaces Math.min", async () => {
+  const result = await evaluateExpression(
+    runtimeExpression("Math.min = () => 101; const value = []; value.length = 6; return value;"),
+    fakeWindow()
+  );
+  const value = (result as { value: { kind: string; value: unknown[] } }).value;
+
+  assert.equal(value.kind, "array");
+  assert.ok(value.value.length <= 100);
 });
 
 test("runtime wrapper caps complete numeric boolean and null-heavy results", async () => {

@@ -31,20 +31,30 @@ export class DiagnosticExecutionPlanStore {
   private readonly now: () => number;
   private readonly createId: () => string;
   private readonly ttlMs: number;
+  private readonly maxPlans: number;
 
-  constructor(options: { now?: () => number; createId?: () => string; ttlMs?: number } = {}) {
+  constructor(options: { now?: () => number; createId?: () => string; ttlMs?: number; maxPlans?: number } = {}) {
     this.now = options.now ?? Date.now;
     this.createId = options.createId ?? randomUUID;
     this.ttlMs = options.ttlMs ?? JAVASCRIPT_DIAGNOSTIC_PLAN_TTL_MS;
+    this.maxPlans = options.maxPlans ?? 1_000;
   }
 
   create(input: DiagnosticExecutionPlanInput): StoredDiagnosticExecutionPlan {
-    const expiresAtMs = this.now() + this.ttlMs;
+    const now = this.now();
+    this.deleteExpired(now);
+    const expiresAtMs = now + this.ttlMs;
     const plan = Object.freeze({
       ...input,
       executionId: this.createId(),
       expiresAt: new Date(expiresAtMs).toISOString()
     });
+    this.plans.delete(plan.executionId);
+    while (this.plans.size >= this.maxPlans) {
+      const oldestExecutionId = this.plans.keys().next().value;
+      if (oldestExecutionId === undefined) break;
+      this.plans.delete(oldestExecutionId);
+    }
     this.plans.set(plan.executionId, { plan, expiresAtMs });
     return copyPlan(plan);
   }
@@ -53,15 +63,23 @@ export class DiagnosticExecutionPlanStore {
     | { status: "ready"; plan: StoredDiagnosticExecutionPlan }
     | { status: "missing" }
     | { status: "expired" } {
+    const now = this.now();
     const entry = this.plans.get(executionId);
+    this.deleteExpired(now, executionId);
     this.plans.delete(executionId);
     if (!entry) return { status: "missing" };
-    if (this.now() >= entry.expiresAtMs) return { status: "expired" };
+    if (now >= entry.expiresAtMs) return { status: "expired" };
     return { status: "ready", plan: copyPlan(entry.plan) };
   }
 
   clear(): void {
     this.plans.clear();
+  }
+
+  private deleteExpired(now: number, exceptExecutionId?: string): void {
+    for (const [executionId, entry] of this.plans) {
+      if (executionId !== exceptExecutionId && now >= entry.expiresAtMs) this.plans.delete(executionId);
+    }
   }
 }
 
@@ -85,10 +103,31 @@ export function buildDiagnosticRuntimeExpression(_input: {
   const maxEntries = 100;
   const maxStringCharacters = 20_000;
   const maxTotalCharacters = 100_000;
+  const SafeError = Error;
+  const SafeFunction = Function;
+  const SafeWeakSet = WeakSet;
+  const safeString = String;
+  const arrayIsArray = Array.isArray.bind(Array);
+  const jsonStringify = JSON.stringify.bind(JSON);
+  const numberIsFinite = Number.isFinite.bind(Number);
+  const objectCreate = Object.create.bind(Object);
+  const objectKeys = Object.keys.bind(Object);
+  const objectValues = Object.values.bind(Object);
+  const mathFloor = Math.floor.bind(Math);
+  const mathMin = Math.min.bind(Math);
+  const arrayPop = Function.call.bind(Array.prototype.pop);
+  const arrayPush = Function.call.bind(Array.prototype.push);
+  const arraySlice = Function.call.bind(Array.prototype.slice);
+  const arraySome = Function.call.bind(Array.prototype.some);
+  const stringSlice = Function.call.bind(String.prototype.slice);
+  const weakSetAdd = Function.call.bind(WeakSet.prototype.add);
+  const weakSetDelete = Function.call.bind(WeakSet.prototype.delete);
+  const weakSetHas = Function.call.bind(WeakSet.prototype.has);
+  let remainingCharacters = maxTotalCharacters;
 
   const messageFor = (error) => {
     try {
-      return error instanceof Error ? error.message : String(error);
+      return error instanceof SafeError ? error.message : safeString(error);
     } catch {
       return "Unknown error";
     }
@@ -105,19 +144,20 @@ export function buildDiagnosticRuntimeExpression(_input: {
   const takeText = (value, characterLimit = maxStringCharacters) => {
     let text;
     try {
-      text = String(value);
+      text = safeString(value);
     } catch (error) {
       text = "[Unprintable: " + messageFor(error) + "]";
     }
-    const available = Math.min(characterLimit, maxStringCharacters);
+    const available = mathMin(characterLimit, maxStringCharacters, remainingCharacters);
     const truncated = text.length > available;
-    const result = text.slice(0, available);
+    const result = stringSlice(text, 0, available);
+    remainingCharacters -= result.length;
     return { value: result, truncated };
   };
 
   const jsonLength = (value) => {
     try {
-      return JSON.stringify(value).length;
+      return jsonStringify(value).length;
     } catch {
       return maxTotalCharacters + 1;
     }
@@ -125,14 +165,14 @@ export function buildDiagnosticRuntimeExpression(_input: {
 
   const shrinkSerializedValue = (value) => {
     if (!value || typeof value !== "object") return false;
-    if (Array.isArray(value.value)) {
+    if (arrayIsArray(value.value)) {
       if (value.value.length === 0) return false;
-      value.value.pop();
+      arrayPop(value.value);
       value.truncated = true;
       return true;
     }
     if (value.kind === "object" && value.value && typeof value.value === "object") {
-      const keys = Object.keys(value.value);
+      const keys = objectKeys(value.value);
       const lastKey = keys[keys.length - 1];
       if (lastKey === undefined) return false;
       delete value.value[lastKey];
@@ -141,7 +181,7 @@ export function buildDiagnosticRuntimeExpression(_input: {
     }
     for (const field of ["value", "text", "className", "id", "tagName"]) {
       if (typeof value[field] !== "string" || value[field].length === 0) continue;
-      value[field] = value[field].slice(0, Math.floor(value[field].length / 2));
+      value[field] = stringSlice(value[field], 0, mathFloor(value[field].length / 2));
       value.truncated = true;
       return true;
     }
@@ -187,7 +227,7 @@ export function buildDiagnosticRuntimeExpression(_input: {
 
     const valueType = typeof value;
     if (valueType === "boolean") return { kind: "boolean", value };
-    if (valueType === "number") return { kind: "number", value: Number.isFinite(value) ? value : String(value) };
+    if (valueType === "number") return { kind: "number", value: numberIsFinite(value) ? value : safeString(value) };
     if (valueType === "string") {
       const text = takeText(value);
       return { kind: "string", value: text.value, truncated: text.truncated };
@@ -211,21 +251,21 @@ export function buildDiagnosticRuntimeExpression(_input: {
       };
     }
 
-    const array = Array.isArray(value);
+    const array = arrayIsArray(value);
     if (depth >= maxDepth) {
       return { kind: array ? "array" : "object", value: "[Max depth]", truncated: true };
     }
-    if (seen.has(value)) return "[Circular]";
-    seen.add(value);
+    if (weakSetHas(seen, value)) return "[Circular]";
+    weakSetAdd(seen, value);
 
     let keys;
     try {
       if (array) {
-        const entryCount = Math.min(value.length, maxEntries);
+        const entryCount = mathMin(value.length, maxEntries);
         keys = [];
-        for (let index = 0; index < entryCount; index += 1) keys.push(String(index));
+        for (let index = 0; index < entryCount; index += 1) arrayPush(keys, safeString(index));
       } else {
-        keys = Object.keys(value);
+        keys = objectKeys(value);
       }
     } catch (error) {
       return {
@@ -235,7 +275,7 @@ export function buildDiagnosticRuntimeExpression(_input: {
       };
     }
 
-    const limitedKeys = array ? keys : keys.slice(0, maxEntries);
+    const limitedKeys = array ? keys : arraySlice(keys, 0, maxEntries);
     const truncated = array ? value.length > maxEntries : keys.length > maxEntries;
     if (array) {
       const entries = [];
@@ -246,18 +286,18 @@ export function buildDiagnosticRuntimeExpression(_input: {
         } catch (error) {
           entry = "[Accessor threw: " + messageFor(error) + "]";
         }
-        entries.push(serialize(entry, depth + 1, seen));
+        arrayPush(entries, serialize(entry, depth + 1, seen));
       }
       const result = {
         kind: "array",
         value: entries,
-        truncated: truncated || entries.some((entry) => entry?.truncated)
+        truncated: truncated || arraySome(entries, (entry) => entry?.truncated)
       };
-      seen.delete(value);
+      weakSetDelete(seen, value);
       return result;
     }
 
-    const entries = Object.create(null);
+    const entries = objectCreate(null);
     for (const key of limitedKeys) {
       const outputKey = takeText(key).value;
       let entry;
@@ -271,9 +311,9 @@ export function buildDiagnosticRuntimeExpression(_input: {
     const result = {
       kind: "object",
       value: entries,
-      truncated: truncated || Object.values(entries).some((entry) => entry?.truncated)
+      truncated: truncated || arraySome(objectValues(entries), (entry) => entry?.truncated)
     };
-    seen.delete(value);
+    weakSetDelete(seen, value);
     return result;
   };
 
@@ -286,9 +326,9 @@ export function buildDiagnosticRuntimeExpression(_input: {
   }
 
   try {
-    const execute = new Function("$target", "return (async () => {\\n" + source + "\\n})();");
+    const execute = new SafeFunction("$target", "return (async () => {\\n" + source + "\\n})();");
     const value = await execute(target);
-    return finalize({ status: "success", value: serialize(value, 0, new WeakSet()) });
+    return finalize({ status: "success", value: serialize(value, 0, new SafeWeakSet()) });
   } catch (error) {
     const message = takeText(messageFor(error)).value;
     let stack;
