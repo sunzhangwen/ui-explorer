@@ -215,6 +215,6 @@ msedge `
 
 ## 开发状态
 
-项目当前支持 Chrome/Edge 调试目标连接与恢复、DOM/iframe/open Shadow/OOPIF 快照、元素捕获与属性诊断、Selector 生成与验证、高级 HTML/伪表格提取和 CSV、JSON、Markdown、Excel 导出，以及受预检和单次确认约束的 JavaScript 诊断。Phase 8 的自动化验证已通过；其最终完成状态仍以代表性浏览器人工验收为准。后续规划包括桌面 UIAutomation、UiPath 兼容、项目管理和 AI 辅助等能力。
+项目当前支持 Chrome/Edge 调试目标连接与恢复、DOM/iframe/open Shadow/OOPIF 快照、元素捕获与属性诊断、Selector 生成与验证、高级 HTML/伪表格提取和 CSV、JSON、Markdown、Excel 导出，以及受预检和单次确认约束的 JavaScript 诊断。Phase 8 已完成自动化验证和代表性浏览器验收，包括精确 Session 路由、一次性确认、受限结果序列化、异常与超时展示、临时属性编辑，以及离线可用的本地 Monaco 编辑器。后续规划包括桌面 UIAutomation、UiPath 兼容、项目管理和 AI 辅助等能力。
 
 详细需求见 [REQUIREMENTS.md](./REQUIREMENTS.md)。

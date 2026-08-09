@@ -789,13 +789,13 @@ Add a stable target to each context without changing existing selectors. In `bas
 
 Use equivalent stable target markup inside the existing iframe, Shadow, and OOPIF fixtures.
 
-- [ ] **Step 2: Run all automated tests**
+- [x] **Step 2: Run all automated tests**
 
 Run: `npm test`
 
 Expected: every shared, main-process, routing, reducer, selector, table, and existing regression test passes with no warnings from application code.
 
-- [ ] **Step 3: Run typecheck and production build**
+- [x] **Step 3: Run typecheck and production build**
 
 Run: `npm run typecheck`
 
@@ -805,7 +805,7 @@ Run: `npm run build`
 
 Expected: Electron compilation and Vite production build complete successfully; Monaco is emitted as a separate lazy-loaded chunk.
 
-- [ ] **Step 4: Perform browser acceptance**
+- [x] **Step 4: Perform browser acceptance**
 
 Run `npm run dev`, use UI Explorer's managed Chrome flow, and check:
 
@@ -817,11 +817,11 @@ Run `npm run dev`, use UI Explorer's managed Chrome flow, and check:
 6. Attribute editing shows code first, changes only after confirmation, and refreshes the snapshot.
 7. Editing source or switching target invalidates preflight and confirmation.
 
-- [ ] **Step 5: Update capability documentation and roadmap status**
+- [x] **Step 5: Update capability documentation and roadmap status**
 
 Update README current capabilities, directory map, test-page coverage, and development status to include controlled JavaScript diagnostics and completed OOPIF/advanced table functionality. In `REQUIREMENTS.md`, mark Phase 8 as completed only after Steps 2–4 pass, preserving the diagnostic-only boundary and Phase 9+ ordering.
 
-- [ ] **Step 6: Run final diff and whitespace checks**
+- [x] **Step 6: Run final diff and whitespace checks**
 
 Run: `git diff --check`
 
@@ -831,12 +831,21 @@ Run: `git status --short`
 
 Expected: only Phase 8 implementation, tests, fixtures, and documentation are modified.
 
-- [ ] **Step 7: Commit verified Phase 8 completion**
+- [x] **Step 7: Commit verified Phase 8 completion**
 
 ```powershell
 git add README.md REQUIREMENTS.md public/test-pages/basic-dom.html public/test-pages/iframe-child.html public/test-pages/shadow-dom.html public/test-pages/oopif-child.html
 git commit -m "docs: record Phase 8 verification"
 ```
+
+## Verification Record
+
+- Automated verification: 290 tests passed; Electron and Renderer typechecks passed; the production build passed; `git diff --check` reported no errors.
+- Browser contexts: ordinary DOM, same-origin iframe, open Shadow DOM, and OOPIF targets produced valid drafts and executed in their intended contexts. OOPIF routing was additionally covered by exact child-Session command tests.
+- Safety gate: execution remained disabled until the bound confirmation was checked; editing source invalidated the prepared execution and confirmation; one-time and expired plan behavior is covered by automated and browser evidence.
+- Results: `undefined`, cyclic objects, DOM nodes, Promise rejection, and the 5-second timeout rendered distinct bounded results. Runtime intrinsic pollution, malformed return shapes, transport stalls, and oversized exception details have regression coverage.
+- Mutation: attribute editing displayed generated code before execution, changed the DOM only after confirmation, and refreshed the snapshot to show `data-phase="after"`.
+- Editor: Monaco loaded from the bundled local dependency and workers; runtime resource inspection showed no jsDelivr request.
 
 ## Plan Self-Review Result
 
