@@ -112,6 +112,7 @@ export function buildDiagnosticRuntimeExpression(_input: {
   const numberIsFinite = Number.isFinite.bind(Number);
   const objectCreate = Object.create.bind(Object);
   const objectKeys = Object.keys.bind(Object);
+  const objectSetPrototypeOf = Object.setPrototypeOf.bind(Object);
   const objectValues = Object.values.bind(Object);
   const mathFloor = Math.floor.bind(Math);
   const mathMin = Math.min.bind(Math);
@@ -188,25 +189,34 @@ export function buildDiagnosticRuntimeExpression(_input: {
     return false;
   };
 
+  const removeSerializationPrototypes = (value, seen = new SafeWeakSet()) => {
+    if (!value || typeof value !== "object" || weakSetHas(seen, value)) return value;
+    weakSetAdd(seen, value);
+    for (const entry of objectValues(value)) removeSerializationPrototypes(entry, seen);
+    objectSetPrototypeOf(value, null);
+    return value;
+  };
+
   const finalize = (result) => {
+    removeSerializationPrototypes(result);
     if (result.status === "success") {
       while (jsonLength(result) > maxTotalCharacters && shrinkSerializedValue(result.value)) {
         // The serialized structure is reduced until its complete JSON representation fits.
       }
       if (jsonLength(result) <= maxTotalCharacters) return result;
-      return { status: "success", value: { kind: "truncated", value: "[Serialization limit]", truncated: true } };
+      return removeSerializationPrototypes({ status: "success", value: { kind: "string", value: "[Serialization limit]", truncated: true } });
     }
     if (result.status === "exception") {
       while (jsonLength(result) > maxTotalCharacters) {
         if (typeof result.stack === "string" && result.stack.length > 0) {
-          result.stack = result.stack.slice(0, Math.floor(result.stack.length / 2));
+          result.stack = stringSlice(result.stack, 0, mathFloor(result.stack.length / 2));
           continue;
         }
         if (typeof result.message === "string" && result.message.length > 0) {
-          result.message = result.message.slice(0, Math.floor(result.message.length / 2));
+          result.message = stringSlice(result.message, 0, mathFloor(result.message.length / 2));
           continue;
         }
-        return { status: "exception", message: "Runtime exception exceeded serialization limit." };
+        return removeSerializationPrototypes({ status: "exception", message: "Runtime exception exceeded serialization limit." });
       }
     }
     return result;
@@ -233,7 +243,15 @@ export function buildDiagnosticRuntimeExpression(_input: {
       return { kind: "string", value: text.value, truncated: text.truncated };
     }
     if (valueType === "bigint" || valueType === "symbol" || valueType === "function") {
-      const text = takeText(valueType === "function" ? value.name || "anonymous" : value);
+      let printableValue = value;
+      if (valueType === "function") {
+        try {
+          printableValue = value.name || "anonymous";
+        } catch {
+          printableValue = "anonymous";
+        }
+      }
+      const text = takeText(printableValue);
       return { kind: valueType, value: text.value };
     }
 
@@ -298,8 +316,15 @@ export function buildDiagnosticRuntimeExpression(_input: {
     }
 
     const entries = objectCreate(null);
+    let keysTruncated = false;
     for (const key of limitedKeys) {
-      const outputKey = takeText(key).value;
+      const outputKeyResult = takeText(key);
+      const outputKey = outputKeyResult.value;
+      keysTruncated ||= outputKeyResult.truncated;
+      if (outputKey in entries) {
+        keysTruncated = true;
+        break;
+      }
       let entry;
       try {
         entry = value[key];
@@ -311,7 +336,7 @@ export function buildDiagnosticRuntimeExpression(_input: {
     const result = {
       kind: "object",
       value: entries,
-      truncated: truncated || arraySome(objectValues(entries), (entry) => entry?.truncated)
+      truncated: truncated || keysTruncated || arraySome(objectValues(entries), (entry) => entry?.truncated)
     };
     weakSetDelete(seen, value);
     return result;
@@ -326,7 +351,10 @@ export function buildDiagnosticRuntimeExpression(_input: {
   }
 
   try {
-    const execute = new SafeFunction("$target", "return (async () => {\\n" + source + "\\n})();");
+    const execute = new SafeFunction(
+      "$target",
+      "return (async () => {\\n" + source + "\\n})();\\n//# sourceURL=ui-explorer-diagnostic.js"
+    );
     const value = await execute(target);
     return finalize({ status: "success", value: serialize(value, 0, new SafeWeakSet()) });
   } catch (error) {

@@ -196,6 +196,18 @@ test("runtime wrapper summarizes DOM nodes and functions", async () => {
   });
 });
 
+test("runtime wrapper survives throwing function name accessors", async () => {
+  const result = await evaluateExpression(
+    runtimeExpression('return new Proxy(function () {}, { get(target, key) { if (key === "name") throw new Error("name denied"); return Reflect.get(target, key); } });'),
+    fakeWindow()
+  );
+
+  assert.deepEqual(result, {
+    status: "success",
+    value: { kind: "function", value: "anonymous" }
+  });
+});
+
 test("runtime wrapper survives throwing accessors", async () => {
   const result = await evaluateExpression(
     runtimeExpression('const value = {}; Object.defineProperty(value, "bad", { enumerable: true, get() { throw new Error("access denied"); } }); return value;'),
@@ -203,6 +215,29 @@ test("runtime wrapper survives throwing accessors", async () => {
   );
   assert.equal((result as { status: string }).status, "success");
   assert.match(JSON.stringify(result), /access denied/);
+});
+
+test("runtime wrapper propagates truncated object keys", async () => {
+  const result = await evaluateExpression(
+    runtimeExpression('return { ["k".repeat(20_001)]: "value" };'),
+    fakeWindow()
+  );
+  const value = (result as { value: { kind: string; truncated: boolean } }).value;
+
+  assert.equal(value.kind, "object");
+  assert.equal(value.truncated, true);
+});
+
+test("runtime wrapper stops when truncated object keys collide", async () => {
+  const result = await evaluateExpression(
+    runtimeExpression('const prefix = "k".repeat(20_000); return { [prefix + "a"]: "first", [prefix + "b"]: "second" };'),
+    fakeWindow()
+  );
+  const value = (result as { value: { kind: string; value: Record<string, unknown>; truncated: boolean } }).value;
+
+  assert.equal(value.kind, "object");
+  assert.equal(Object.keys(value.value).length, 1);
+  assert.equal(value.truncated, true);
 });
 
 test("runtime wrapper enforces string and total-character serialization caps", async () => {
@@ -239,6 +274,64 @@ test("runtime wrapper keeps the complete result capped when user code replaces J
 
   assert.equal((result as { status: string }).status, "success");
   assert.ok(JSON.stringify(result).length <= 100_000);
+});
+
+test("runtime wrapper ignores short inherited toJSON replacements", async () => {
+  const objectResult = await evaluateExpression(
+    runtimeExpression('Object.prototype.toJSON = () => "forged"; return { answer: 42 };'),
+    fakeWindow()
+  );
+  const arrayResult = await evaluateExpression(
+    runtimeExpression('Array.prototype.toJSON = () => "forged"; return [42];'),
+    fakeWindow()
+  );
+
+  assert.equal((objectResult as { status: string }).status, "success");
+  assert.equal((objectResult as { value: { kind: string } }).value.kind, "object");
+  assert.equal((arrayResult as { status: string }).status, "success");
+  assert.equal((arrayResult as { value: { kind: string } }).value.kind, "array");
+  assert.ok(JSON.stringify(objectResult).length <= 100_000);
+  assert.ok(JSON.stringify(arrayResult).length <= 100_000);
+});
+
+test("runtime wrapper ignores oversized inherited toJSON replacements", async () => {
+  const objectResult = await evaluateExpression(
+    runtimeExpression(
+      'Object.prototype.toJSON = () => "x".repeat(200_000); return { answer: 42 };'
+    ),
+    fakeWindow()
+  );
+  const arrayResult = await evaluateExpression(
+    runtimeExpression('Array.prototype.toJSON = () => "x".repeat(200_000); return [42];'),
+    fakeWindow()
+  );
+
+  assert.equal((objectResult as { status: string }).status, "success");
+  assert.ok(["object", "string"].includes((objectResult as { value: { kind: string } }).value.kind));
+  assert.equal((arrayResult as { status: string }).status, "success");
+  assert.ok(["array", "string"].includes((arrayResult as { value: { kind: string } }).value.kind));
+  assert.ok(JSON.stringify(objectResult).length <= 100_000);
+  assert.ok(JSON.stringify(arrayResult).length <= 100_000);
+});
+
+test("runtime wrapper ignores throwing inherited toJSON replacements", async () => {
+  const objectResult = await evaluateExpression(
+    runtimeExpression(
+      'Object.prototype.toJSON = () => { throw new Error("forged object"); }; return { answer: 42 };'
+    ),
+    fakeWindow()
+  );
+  const arrayResult = await evaluateExpression(
+    runtimeExpression('Array.prototype.toJSON = () => { throw new Error("forged array"); }; return [42];'),
+    fakeWindow()
+  );
+
+  assert.equal((objectResult as { status: string }).status, "success");
+  assert.ok(["object", "string"].includes((objectResult as { value: { kind: string } }).value.kind));
+  assert.equal((arrayResult as { status: string }).status, "success");
+  assert.ok(["array", "string"].includes((arrayResult as { value: { kind: string } }).value.kind));
+  assert.ok(JSON.stringify(objectResult).length <= 100_000);
+  assert.ok(JSON.stringify(arrayResult).length <= 100_000);
 });
 
 test("runtime wrapper keeps entry limits when user code replaces Math.min", async () => {
@@ -329,6 +422,14 @@ test("runtime wrapper returns user exceptions and awaited values", async () => {
     status: "success",
     value: { kind: "string", value: "done", truncated: false }
   });
+});
+
+test("runtime wrapper labels user-code stack frames with a stable source URL", async () => {
+  const result = await evaluateExpression(runtimeExpression('throw new Error("source marker");'), fakeWindow());
+  const exception = result as { status: string; stack?: string };
+
+  assert.equal(exception.status, "exception");
+  assert.match(exception.stack ?? "", /ui-explorer-diagnostic\.js/);
 });
 
 test("runtime timeout classifier recognizes CDP timeout errors", () => {
