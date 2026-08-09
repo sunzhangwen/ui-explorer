@@ -182,7 +182,10 @@ if (!root) throw new Error("Unable to enter " + ${stepName});`;
 }
 
 function getSelector(element: ElementSnapshot, candidate: SelectorCandidate | null): string {
-  if (candidate?.type === "css" && candidate.selector) {
+  const hasActiveContextLayers = candidate?.layers.some(
+    (layer) => layer.enabled && (layer.kind === "frame" || layer.kind === "shadow")
+  );
+  if (candidate?.type === "css" && candidate.selector && !hasActiveContextLayers) {
     return candidate.selector;
   }
 
@@ -206,18 +209,11 @@ function getTraversalPredicates(element: ElementSnapshot): string {
   return predicates.join(" && ");
 }
 
-function getOwningSessionId(elementId: string): string | null {
-  const boundary = elementId.indexOf("::");
-  return boundary > 0 ? elementId.slice(0, boundary) : null;
-}
-
 function getInSessionContext(element: ElementSnapshot): ContextBoundary[] {
   const context = element.context ?? [];
-  const sessionId = getOwningSessionId(element.id);
-  if (!sessionId) return context;
   let owningBoundary = -1;
   for (let index = 0; index < context.length; index += 1) {
-    if (context[index]?.sessionId === sessionId) owningBoundary = index;
+    if (context[index]?.targetId) owningBoundary = index;
   }
   return owningBoundary >= 0 ? context.slice(owningBoundary + 1) : context;
 }

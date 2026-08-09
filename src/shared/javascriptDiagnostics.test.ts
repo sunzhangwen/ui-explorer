@@ -27,13 +27,14 @@ const candidate = (
   selector: string,
   status: SelectorValidationStatus = "unique",
   matchCount = status === "unique" ? 1 : 0,
-  type: SelectorType = "css"
+  type: SelectorType = "css",
+  layers: SelectorCandidate["layers"] = []
 ): SelectorCandidate => ({
   id: "candidate",
   type,
   label: type === "playwright" ? "Playwright" : type === "xpath" ? "XPath" : "CSS",
   selector,
-  layers: [],
+  layers,
   score: { unique: 100, stability: 100, readability: 100, total: 100, risks: [] },
   validation: {
     status,
@@ -56,7 +57,8 @@ const oopifShadowButton = (): ElementSnapshot =>
         hostNodeId: "payment-frame",
         hostTagName: "iframe",
         hostAttributes: { title: "Payment" },
-        sessionId: "child-session"
+        sessionId: "child-session",
+        targetId: "child-target"
       },
       {
         kind: "frame",
@@ -159,6 +161,147 @@ test("context draft skips the owning OOPIF boundary and enters later local bound
   assert.doesNotMatch(draft.code, /payment-frame/);
   assert.match(draft.code, /nested-frame/);
   assert.match(draft.code, /shadowRoot/);
+});
+
+test("context draft preserves a same-session iframe boundary", () => {
+  const draft = generateJavaScriptDiagnosticDraft({
+    element: button({
+      id: "root-session::save-button",
+      context: [{
+        kind: "frame",
+        hostNodeId: "root-session::settings-frame",
+        hostTagName: "iframe",
+        hostAttributes: { title: "Settings" },
+        sessionId: "root-session"
+      }]
+    }),
+    candidate: candidate("button"),
+    strategy: "context-traversal"
+  });
+
+  assert.match(draft.code, /iframe\[title=\\"Settings\\"\]/);
+  assert.match(draft.code, /contentDocument/);
+});
+
+test("context draft preserves a same-session shadow boundary", () => {
+  const draft = generateJavaScriptDiagnosticDraft({
+    element: button({
+      id: "root-session::save-button",
+      context: [{
+        kind: "shadow",
+        hostNodeId: "root-session::settings-host",
+        hostTagName: "settings-panel",
+        hostAttributes: { "data-testid": "settings-host" },
+        sessionId: "root-session"
+      }]
+    }),
+    candidate: candidate("button"),
+    strategy: "context-traversal"
+  });
+
+  assert.match(draft.code, /settings-panel\[data-testid=\\"settings-host\\"\]/);
+  assert.match(draft.code, /shadowRoot/);
+});
+
+test("context draft preserves iframe and shadow paths local to an OOPIF session", () => {
+  const draft = generateJavaScriptDiagnosticDraft({
+    element: button({
+      id: "child-session::save-button",
+      context: [
+        {
+          kind: "frame",
+          hostNodeId: "root-session::payment-frame",
+          hostTagName: "iframe",
+          hostAttributes: { title: "Payment" },
+          frameId: "child-frame",
+          sessionId: "child-session",
+          targetId: "child-target"
+        },
+        {
+          kind: "frame",
+          hostNodeId: "child-session::nested-frame",
+          hostTagName: "iframe",
+          hostAttributes: { title: "Nested" },
+          sessionId: "child-session"
+        },
+        {
+          kind: "shadow",
+          hostNodeId: "child-session::save-host",
+          hostTagName: "save-widget",
+          hostAttributes: { "data-testid": "save-host" },
+          sessionId: "child-session"
+        }
+      ]
+    }),
+    candidate: candidate("button"),
+    strategy: "context-traversal"
+  });
+
+  assert.doesNotMatch(draft.code, /Payment/);
+  assert.match(draft.code, /Nested/);
+  assert.match(draft.code, /save-host/);
+});
+
+test("diagnostic drafts do not reuse CSS selectors containing context layers", () => {
+  const contextAwareCandidate = candidate(
+    'html > iframe[title="Payment"] > save-widget[data-testid="save-host"] > button[data-testid="save"]',
+    "unique",
+    1,
+    "css",
+    [
+      {
+        id: "page",
+        nodeId: "root-session::page",
+        kind: "page",
+        tagName: "html",
+        enabled: true,
+        tagEnabled: true,
+        attributes: []
+      },
+      {
+        id: "frame-1",
+        nodeId: "root-session::payment-frame",
+        kind: "frame",
+        tagName: "iframe",
+        enabled: true,
+        tagEnabled: true,
+        attributes: []
+      },
+      {
+        id: "shadow-1",
+        nodeId: "child-session::save-host",
+        kind: "shadow",
+        tagName: "save-widget",
+        enabled: true,
+        tagEnabled: true,
+        attributes: []
+      },
+      {
+        id: "target",
+        nodeId: "child-session::save-button",
+        kind: "target",
+        tagName: "button",
+        enabled: true,
+        tagEnabled: true,
+        attributes: []
+      }
+    ]
+  );
+  const element = button({
+    id: "child-session::save-button",
+    attributes: { "data-testid": "save" }
+  });
+
+  for (const strategy of ["dom-query", "context-traversal"] as const) {
+    const draft = generateJavaScriptDiagnosticDraft({
+      element,
+      candidate: contextAwareCandidate,
+      strategy
+    });
+
+    assert.doesNotMatch(draft.code, /html > iframe/);
+    assert.match(draft.code, /button\[data-testid=\\"save\\"\]/);
+  }
 });
 
 test("context draft falls back to CSS for an XPath candidate", () => {
