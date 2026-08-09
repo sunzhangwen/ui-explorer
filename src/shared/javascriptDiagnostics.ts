@@ -189,9 +189,9 @@ function getSelector(element: ElementSnapshot, candidate: SelectorCandidate | nu
     return candidate.selector;
   }
 
-  const tagName = element.tagName?.toLowerCase() || "*";
+  const tagName = element.tagName ? escapeCssIdentifier(element.tagName.toLowerCase()) : "*";
   const attributes = Object.entries(element.attributes)
-    .map(([name, value]) => `[${name}="${escapeCssAttribute(value)}"]`)
+    .map(([name, value]) => `[${escapeCssIdentifier(name)}="${escapeCssAttribute(value)}"]`)
     .join("");
   return `${tagName}${attributes}`;
 }
@@ -219,11 +219,41 @@ function getInSessionContext(element: ElementSnapshot): ContextBoundary[] {
 }
 
 function serializeBoundaryHost(boundary: ContextBoundary): string {
-  const tagName = boundary.hostTagName || "*";
+  const tagName = boundary.hostTagName ? escapeCssIdentifier(boundary.hostTagName) : "*";
   const attributes = Object.entries(boundary.hostAttributes)
-    .map(([name, value]) => `[${name}="${escapeCssAttribute(value)}"]`)
+    .map(([name, value]) => `[${escapeCssIdentifier(name)}="${escapeCssAttribute(value)}"]`)
     .join("");
   return `${tagName}${attributes}`;
+}
+
+function escapeCssIdentifier(value: string): string {
+  const characters = Array.from(value);
+  return characters
+    .map((character, index) => {
+      const codePoint = character.codePointAt(0) ?? 0;
+      if (codePoint === 0) return "\uFFFD";
+      if (
+        isCssControl(codePoint) ||
+        codePoint === 0x2028 ||
+        codePoint === 0x2029 ||
+        (index === 0 && isAsciiDigit(codePoint)) ||
+        (index === 1 && isAsciiDigit(codePoint) && characters[0] === "-")
+      ) {
+        return `\\${codePoint.toString(16)} `;
+      }
+      if (index === 0 && character === "-" && characters.length === 1) return "\\-";
+      if (
+        codePoint >= 0x80 ||
+        character === "-" ||
+        character === "_" ||
+        isAsciiDigit(codePoint) ||
+        isAsciiLetter(codePoint)
+      ) {
+        return character;
+      }
+      return `\\${character}`;
+    })
+    .join("");
 }
 
 function escapeCssAttribute(value: string): string {
@@ -235,6 +265,18 @@ function escapeCssAttribute(value: string): string {
       return character === "\\" || character === '"' ? `\\${character}` : character;
     })
     .join("");
+}
+
+function isCssControl(codePoint: number): boolean {
+  return (codePoint >= 0x01 && codePoint <= 0x1f) || codePoint === 0x7f;
+}
+
+function isAsciiDigit(codePoint: number): boolean {
+  return codePoint >= 0x30 && codePoint <= 0x39;
+}
+
+function isAsciiLetter(codePoint: number): boolean {
+  return (codePoint >= 0x41 && codePoint <= 0x5a) || (codePoint >= 0x61 && codePoint <= 0x7a);
 }
 
 function hasDynamicAttribute(element: ElementSnapshot): boolean {

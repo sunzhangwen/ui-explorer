@@ -151,6 +151,45 @@ test("DOM query draft falls back to CSS for a Playwright candidate", () => {
   assert.match(draft.code, /button\[data-testid=\\"phase-8-diagnostic-target\\"\]/);
 });
 
+test("fallback DOM selector escapes punctuation in tag and attribute identifiers", () => {
+  const draft = generateJavaScriptDiagnosticDraft({
+    element: button({
+      tagName: "svg:use",
+      attributes: {
+        "xlink:href": "#save",
+        "data.version": "v1"
+      }
+    }),
+    candidate: candidate('page.locator("svg use")', "unique", 1, "playwright"),
+    strategy: "dom-query"
+  });
+
+  assert.ok(
+    draft.code.includes(
+      JSON.stringify('svg\\:use[xlink\\:href="#save"][data\\.version="v1"]')
+    )
+  );
+});
+
+test("context boundary selector escapes punctuation in host identifiers", () => {
+  const draft = generateJavaScriptDiagnosticDraft({
+    element: button({
+      context: [{
+        kind: "shadow",
+        hostNodeId: "icon-host",
+        hostTagName: "svg:icon",
+        hostAttributes: { "data.version": "v1" }
+      }]
+    }),
+    candidate: candidate("button"),
+    strategy: "context-traversal"
+  });
+
+  assert.ok(
+    draft.code.includes(JSON.stringify('svg\\:icon[data\\.version="v1"]'))
+  );
+});
+
 test("context draft skips the owning OOPIF boundary and enters later local boundaries", () => {
   const draft = generateJavaScriptDiagnosticDraft({
     element: oopifShadowButton(),
