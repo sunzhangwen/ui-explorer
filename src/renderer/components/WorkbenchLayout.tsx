@@ -43,6 +43,10 @@ import type {
 } from "../../shared/ipc";
 import type { AttributeEditDraft } from "../../shared/javascriptDiagnostics";
 import {
+  buildUiPathLayerXml,
+  type UiPathWebSelectorContext
+} from "../../shared/uipathSelector";
+import {
   applySelectorEdit,
   diffSelectorCandidates,
   generateSelectorCandidates,
@@ -243,6 +247,17 @@ export function WorkbenchLayout(): JSX.Element {
     () => browserTargets.find((target) => target.id === selectedBrowserTargetId) ?? null,
     [browserTargets, selectedBrowserTargetId]
   );
+  const connectedBrowser = browserConnection.state === "connected"
+    ? browserConnection.browser
+    : undefined;
+  const uipathContext = useMemo<UiPathWebSelectorContext>(
+    () => ({
+      browser: connectedBrowser,
+      title: selectedTarget?.title,
+      url: selectedTarget?.url
+    }),
+    [connectedBrowser, selectedTarget?.title, selectedTarget?.url]
+  );
   const selectorCandidates = useMemo(
     () => generateSelectorCandidates(domSnapshot?.root ?? null, selectedElementId),
     [domSnapshot?.root, selectedElementId]
@@ -265,8 +280,8 @@ export function WorkbenchLayout(): JSX.Element {
     [activeCandidateId, selectedElement, selectorCandidates, selectorDrafts]
   );
   const selectorExports = useMemo(
-    () => buildWorkbenchExports(selectedElement, selectedCandidate),
-    [selectedCandidate, selectedElement]
+    () => buildWorkbenchExports(selectedElement, selectedCandidate, uipathContext),
+    [selectedCandidate, selectedElement, uipathContext]
   );
   const extractedTable = useMemo(
     () => extractTableForSelection(domSnapshot?.root ?? null, selectedElementId),
@@ -898,6 +913,7 @@ export function WorkbenchLayout(): JSX.Element {
               selectedCandidate={selectedCandidate}
               selectedCandidateId={activeCandidateId}
               drafts={selectorDrafts}
+              uipathContext={uipathContext}
               onSelectCandidate={setSelectedCandidateId}
               onEdit={editSelector}
             />
@@ -951,11 +967,11 @@ export function WorkbenchLayout(): JSX.Element {
             onToggle={() => toggleRightPanelSection("export")}
           >
             <div className="editor-shell">
-              <div className="editor-title">
+              <div className="editor-title selector-export-title">
                 <Code2 size={14} />
                 {t("selector.exportPreview")}
                 <div className="editor-tabs" role="tablist" aria-label={t("selector.exportPreview")}>
-                  {(["json", "playwright", "selenium"] as const).map((format) => (
+                  {(["json", "playwright", "selenium", "uipath"] as const).map((format) => (
                     <button
                       type="button"
                       key={format}
@@ -972,7 +988,15 @@ export function WorkbenchLayout(): JSX.Element {
               </div>
               <MonacoCodeEditor
                 height="190px"
-                language={exportFormat === "json" ? "json" : exportFormat === "playwright" ? "typescript" : "python"}
+                language={
+                  exportFormat === "json"
+                    ? "json"
+                    : exportFormat === "playwright"
+                      ? "typescript"
+                      : exportFormat === "selenium"
+                        ? "python"
+                        : "xml"
+                }
                 value={previewSnippet}
                 options={{
                   readOnly: true,
@@ -1461,7 +1485,8 @@ function SelectorPanel({
   onSelectCandidate,
   root,
   selectedCandidate,
-  selectedCandidateId
+  selectedCandidateId,
+  uipathContext
 }: {
   candidates: SelectorCandidate[];
   diagnostic?: SnapshotDiagnostic;
@@ -1472,6 +1497,7 @@ function SelectorPanel({
   root: ElementSnapshot | null;
   selectedCandidate: SelectorCandidate | null;
   selectedCandidateId: string | null;
+  uipathContext: UiPathWebSelectorContext;
 }): JSX.Element {
   const { t } = useI18n();
 
@@ -1552,7 +1578,7 @@ function SelectorPanel({
       <section className="property-card selector-card">
         <h3>{t("selector.layers")}</h3>
         {selectedCandidate.layers.map((layer) => (
-          <div className="selector-layer" key={layer.id}>
+          <div className="selector-layer" data-enabled={layer.enabled} key={layer.id}>
             <label>
               <input
                 type="checkbox"
@@ -1570,6 +1596,7 @@ function SelectorPanel({
               />
               <code>{layer.tagName}</code>
             </label>
+            <code className="selector-layer-node">{buildUiPathLayerXml(layer, uipathContext)}</code>
             <div className="selector-attributes">
               {layer.attributes.map((attribute) => (
                 <label key={attribute.name}>

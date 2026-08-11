@@ -298,6 +298,64 @@ test("diagnostic export takes priority over a selector draft from the previously
   assert.doesNotMatch(exports?.selenium ?? "", /\.click\(\)/);
 });
 
+test("workbench export forwards browser target metadata to the UiPath full selector", () => {
+  const candidate: SelectorCandidate = {
+    id: "css",
+    type: "css",
+    label: "CSS",
+    selector: "button#save",
+    layers: [
+      {
+        id: "page",
+        nodeId: "page",
+        kind: "page",
+        tagName: "html",
+        enabled: true,
+        tagEnabled: true,
+        attributes: []
+      },
+      {
+        id: "target",
+        nodeId: "save",
+        kind: "target",
+        tagName: "button",
+        enabled: true,
+        tagEnabled: true,
+        attributes: [
+          { name: "id", value: "save", enabled: true, stable: true, score: 46 }
+        ]
+      }
+    ],
+    score: {
+      unique: 100,
+      stability: 100,
+      readability: 90,
+      total: 98,
+      risks: []
+    },
+    validation: {
+      status: "unique",
+      matchCount: 1,
+      unique: true,
+      visible: true,
+      targetConsistent: true,
+      matchedElementIds: ["save"],
+      boundaryAmbiguities: [],
+      diagnostics: []
+    }
+  };
+  const exports = buildWorkbenchExports(null, candidate, {
+    browser: "Microsoft Edge/140.0",
+    title: "Accounts",
+    url: "https://example.com/accounts"
+  });
+
+  assert.equal(
+    exports?.uipath,
+    "<html app='msedge.exe' title='Accounts' url='https://example.com/accounts' />\n<webctrl tag='BUTTON' id='save' />"
+  );
+});
+
 test("summarizes extracted table dimensions and header depth", () => {
   const table: ExtractedTable = {
     tableId: "metrics",

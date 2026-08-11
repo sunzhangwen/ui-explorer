@@ -54,7 +54,7 @@ type IpcStatus =
 type BrowserConnectionStatus =
   | { state: "idle" }
   | { state: "connecting"; endpoint: string }
-  | { state: "connected"; endpoint: string; message: string; diagnostics?: BrowserConnectionDiagnostics }
+  | { state: "connected"; endpoint: string; browser?: string; message: string; diagnostics?: BrowserConnectionDiagnostics }
   | { state: "error"; endpoint: string; message: string };
 
 type AppStore = {
@@ -270,6 +270,7 @@ export const useAppStore = create<AppStore>()(
               browserConnection: {
                 state: "connected",
                 endpoint: info.endpoint,
+                browser: info.browser,
                 message: info.status,
                 diagnostics: info.diagnostics
               },
@@ -292,6 +293,7 @@ export const useAppStore = create<AppStore>()(
               browserConnection: {
                 state: "connected",
                 endpoint: info.endpoint,
+                browser: info.browser,
                 message: info.status,
                 diagnostics: info.diagnostics
               },
@@ -312,6 +314,7 @@ export const useAppStore = create<AppStore>()(
               browserConnection: {
                 state: "connected",
                 endpoint: info.endpoint,
+                browser: info.browser,
                 message: info.status,
                 diagnostics: info.diagnostics
               },
@@ -330,6 +333,7 @@ export const useAppStore = create<AppStore>()(
               browserConnection: {
                 state: "connected",
                 endpoint: requestEndpoint,
+                browser: current.browserConnection.browser,
                 message: "reconnecting"
               }
             });
@@ -613,6 +617,7 @@ function setConnectionInfo(
     browserConnection: {
       state: "connected",
       endpoint: info.endpoint,
+      browser: info.browser,
       message: info.status,
       diagnostics: info.diagnostics
     },

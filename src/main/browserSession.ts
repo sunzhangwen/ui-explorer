@@ -90,6 +90,7 @@ export class BrowserSession {
   private endpoint: string | null = null;
   private targets: BrowserTarget[] = [];
   private diagnostics: BrowserConnectionDiagnostics | null = null;
+  private browser: string | null = null;
   private selectedTargetId: string | null = null;
   private selectedTarget: BrowserTarget | null = null;
   private lifecycleRevision = 0;
@@ -143,6 +144,7 @@ export class BrowserSession {
     this.endpoint = null;
     this.targets = [];
     this.diagnostics = null;
+    this.browser = null;
     this.selectedTargetId = null;
     this.selectedTarget = null;
     this.rootSessionId = null;
@@ -784,6 +786,7 @@ export class BrowserSession {
       throw new Error("Browser endpoint did not provide a browser WebSocket URL.");
     }
     await this.targetClient.connect(version.webSocketDebuggerUrl);
+    this.browser = version.browser;
   }
 
   private async initializeSession(sessionId: string): Promise<void> {
@@ -912,6 +915,7 @@ export class BrowserSession {
   private getConnectionInfo(status: BrowserConnectionInfo["status"]): BrowserConnectionInfo {
     return {
       endpoint: this.endpoint ?? "",
+      browser: this.browser ?? undefined,
       connected: Boolean(this.endpoint && status !== "no-targets" && status !== "target-closed"),
       status,
       targetId: this.selectedTargetId,

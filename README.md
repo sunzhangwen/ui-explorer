@@ -1,6 +1,6 @@
 # UI Explorer
 
-UI Explorer 是一个基于 Electron + React + TypeScript 的网页 UI 元素探索工具，面向 RPA 开发者、测试工程师和前端自动化开发者。它用于连接 Chrome/Edge 调试目标，捕获页面元素，生成稳定 Selector，并导出到 Playwright、Selenium 等自动化环境。
+UI Explorer 是一个基于 Electron + React + TypeScript 的网页 UI 元素探索工具，面向 RPA 开发者、测试工程师和前端自动化开发者。它用于连接 Chrome/Edge 调试目标，捕获页面元素，生成稳定 Selector，并导出到 Playwright、Selenium、UiPath 等自动化环境。
 
 ## 当前能力
 
@@ -12,9 +12,9 @@ UI Explorer 是一个基于 Electron + React + TypeScript 的网页 UI 元素探
 - 自动生成 CSS、XPath、Playwright Locator 三类 Selector 候选。
 - 对 Selector 做匹配数量、唯一性、可见性、目标一致性验证。
 - 按唯一性、稳定性、可读性计算综合评分，并展示风险诊断。
-- 支持启用/禁用上下文（frame、Shadow）及 Selector 的层级、标签和属性，支持手动编辑属性值；上下文层级变更会立即重新验证。
+- 提供 UiPath 风格层级编辑视图，支持启用/禁用上下文（frame、Shadow）及 Selector 的层级、标签和属性，支持手动编辑属性值；层级 XML 预览和匹配验证会立即同步更新。
 - Selector 多匹配时可在目标页面编号高亮所有匹配元素。
-- 支持导出 JSON、Playwright TypeScript、Selenium Python 代码预览；导出会保留 frame 进入顺序并处理 open Shadow DOM 上下文。
+- 支持导出 JSON、Playwright TypeScript、Selenium Python 和 UiPath Selector XML 预览；导出会保留页面、frame、open Shadow、祖先和目标层的顺序。
 - 通过附加的 CDP 子 Session 处理跨域 iframe 与 OOPIF；快照、Selector、表格提取和诊断执行始终路由到目标所属的 Session。
 - 支持高级表格提取：选择行列、识别 CSS Grid/Flex 伪表格并导出 CSV、JSON、Markdown 和 Excel。
 - 提供受控 JavaScript 诊断：在 Monaco 中审查和编辑代码，经预检、一次性确认令牌后只在目标 Session 执行，并明确展示值、`undefined`、不可序列化值、异常和超时结果。
@@ -149,13 +149,14 @@ src/
     ipc.ts                 # IPC 类型和通道定义
     javascriptDiagnostics.ts # 诊断代码草稿、校验与确定性建议
     selector.ts            # Selector 生成、评分、验证和导出
+    uipathSelector.ts      # 网页层级到 UiPath Selector XML 的映射与转义
   types/
     global.d.ts            # window.uiExplorer 类型声明
 ```
 
 ## 测试页面
 
-内置测试页面位于 `public/test-pages/`，覆盖普通 DOM、iframe、Shadow DOM、OOPIF、动态列表、HTML/伪表格和弹层等场景。它们用于验证元素捕获、Selector 生成、评分、验证、导出和受控 JavaScript 诊断。
+内置测试页面位于 `public/test-pages/`，覆盖普通 DOM、iframe、Shadow DOM、OOPIF、动态列表、HTML/伪表格和弹层等场景。它们用于验证元素捕获、Selector 生成、评分、验证、Playwright/Selenium/UiPath 导出和受控 JavaScript 诊断。
 
 其中 `iframe.html` 覆盖同源嵌套 frame，`shadow-dom.html` 覆盖 open、嵌套 open 与 closed Shadow Root，`oopif.html` 在 `localhost` 和 `127.0.0.1` 之间创建跨站子 frame。四类诊断上下文均有稳定的 `data-testid="phase-8-diagnostic-target"` 目标；`basic-dom.html` 还提供 `window.phase8Diagnostics`，用于人工验证 `undefined`、循环对象、DOM 节点、拒绝和超时结果。对于 frame、Shadow 和 OOPIF，元素树、属性路径、Selector 层级、导出代码、表格提取和诊断执行共用同一套上下文信息。
 
@@ -209,12 +210,23 @@ msedge `
 
 在 UI Explorer 中保持调试地址为 `localhost:9222`，点击“连接”，然后从左侧目标列表选择刚打开的测试页面。切换场景时，可以修改浏览器地址栏中的 `/test-pages/*.html` 路径，也可以重新执行启动命令并替换最后的 URL。
 
+## UiPath Selector XML
+
+选择网页元素后，右侧 Selector 面板会显示 UiPath 风格的逐层 XML 预览。启用、禁用或编辑任一层级、标签和属性时，内部 Selector 模型、匹配验证和“导出预览”中的 `UiPath XML` 标签页会同步更新。复制得到的是可直接用于 UiPath Selector 字段或 `Target.FromSelector(...)` 的 XML 片段。
+
+- 页面层输出 `<html>`，自动识别 Chrome/Edge 的可执行文件名，并带入当前页面标题和 URL。
+- frame、open Shadow、普通祖先和目标层按捕获顺序输出 `<webctrl>`。
+- UiPath 原生 WEBCTRL 属性直接输出；`text` 映射为 `innertext`；`data-testid`、`type`、`placeholder` 等非原生属性安全合并到 `css-selector`。
+- 不可访问的跨域/失效上下文输出 XML 注释诊断，不提供看似可运行但实际错误的 Selector。
+
+兼容基线为 UiPath Studio 2025.10 LTS；2024.10 LTS 已按官方传统网页 Selector 节点、属性定义和示例完成静态兼容性抽测，本阶段使用的 XML 结构未发现版本差异。当前范围只包含网页 Selector XML，不生成 UiPath XAML，也不包含桌面 UIA Selector；后者等待 Phase 10 的桌面目标模型和运行时桥接方案确定后再接入。
+
 ## 上下文范围与限制
 
 当前支持遍历同源嵌套 iframe、进入 open Shadow DOM，并通过附加 CDP 子 Session 检查跨域 iframe/OOPIF。OOPIF 中的 Selector、表格提取和诊断代码从子 Session 的 `document` 开始，绝不假装可经由父页 `contentDocument` 跨域访问。对于带有测试标记、可确认 closed mode 的宿主，应用只显示限制诊断，无法捕获或定位其内部节点；普通页面若无法可靠识别 closed Shadow Root，则不会猜测或误报。
 
 ## 开发状态
 
-项目当前支持 Chrome/Edge 调试目标连接与恢复、DOM/iframe/open Shadow/OOPIF 快照、元素捕获与属性诊断、Selector 生成与验证、高级 HTML/伪表格提取和 CSV、JSON、Markdown、Excel 导出，以及受预检和单次确认约束的 JavaScript 诊断。Phase 8 已完成自动化验证和代表性浏览器验收，包括精确 Session 路由、一次性确认、受限结果序列化、异常与超时展示、临时属性编辑，以及离线可用的本地 Monaco 编辑器。后续规划包括桌面 UIAutomation、UiPath 兼容、项目管理和 AI 辅助等能力。
+项目当前支持 Chrome/Edge 调试目标连接与恢复、DOM/iframe/open Shadow/OOPIF 快照、元素捕获与属性诊断、Selector 生成与验证、高级 HTML/伪表格提取和 CSV、JSON、Markdown、Excel 导出，以及受预检和单次确认约束的 JavaScript 诊断。Phase 9 已完成网页端 UiPath Selector XML 映射、UiPath 风格层级编辑、Chrome/Edge 完整 Selector、启停同步、不可访问上下文诊断，以及 2025.10/2024.10 LTS 兼容性记录。后续规划包括桌面 UIAutomation、项目管理和 AI 辅助等能力。
 
 详细需求见 [REQUIREMENTS.md](./REQUIREMENTS.md)。

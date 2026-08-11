@@ -1046,7 +1046,7 @@ test("xpath selector serializes enabled text attribute", () => {
   assert.match(edited.selector, /normalize-space\(\.\)='Save account'/);
 });
 
-test("buildSelectorExports creates JSON, Playwright, and Selenium snippets", () => {
+test("buildSelectorExports creates JSON, Playwright, Selenium, and UiPath snippets", () => {
   const candidate = generateSelectorCandidates(snapshot, "unstable").find((item) => item.type === "css");
   assert.ok(candidate);
 
@@ -1056,6 +1056,7 @@ test("buildSelectorExports creates JSON, Playwright, and Selenium snippets", () 
   assert.match(exports.playwright, /const element = page\.locator\("input\[name=\\\"email\\\"\]"\);/);
   assert.match(exports.playwright, /await element\.click\(\);/);
   assert.match(exports.selenium, /driver\.find_element\(By\.CSS_SELECTOR, 'input\[name="email"\]'\)\.click\(\)/);
+  assert.equal(exports.uipath, "<webctrl tag='INPUT' name='email' />");
 });
 
 test("Playwright export enters nested frames before locating shadow content", () => {
@@ -1924,4 +1925,119 @@ test("disabling any frame-shadow-frame boundary makes later traversal resolve fr
     assert.equal(edited.validation.targetConsistent, false, disabledLayerId);
     assert.deepEqual(edited.validation.matchedElementIds, [], disabledLayerId);
   }
+});
+
+test("UiPath export emits an ordered full web selector for the current browser target", () => {
+  const candidate = generateSelectorCandidates(contextSnapshot, "shadow-input").find(
+    (item) => item.type === "css"
+  );
+  assert.ok(candidate);
+
+  const output = buildSelectorExports(candidate, {
+    browser: "Microsoft Edge/140.0",
+    title: "Checkout & Pay",
+    url: "https://example.com/checkout?step=pay&mode=fast"
+  });
+
+  assert.equal(
+    output.uipath,
+    [
+      "<html app='msedge.exe' title='Checkout &amp; Pay' url='https://example.com/checkout?step=pay&amp;mode=fast' />",
+      "<webctrl tag='IFRAME' css-selector='[title=&quot;Payment&quot;]' />",
+      "<webctrl tag='SEARCH-WIDGET' css-selector='[data-testid=&quot;search-widget&quot;]' />",
+      "<webctrl tag='INPUT' name='query' />"
+    ].join("\n")
+  );
+});
+
+test("UiPath export follows layer and attribute edits from the internal selector model", () => {
+  const candidate = generateSelectorCandidates(contextSnapshot, "shadow-input").find(
+    (item) => item.type === "css"
+  );
+  assert.ok(candidate);
+  const shadowLayer = candidate.layers.find((layer) => layer.kind === "shadow");
+  const targetLayer = candidate.layers.find((layer) => layer.kind === "target");
+  assert.ok(shadowLayer);
+  assert.ok(targetLayer);
+
+  const withoutShadow = applySelectorEdit(contextSnapshot, candidate, {
+    layerId: shadowLayer.id,
+    enabled: false
+  });
+  const withTargetType = applySelectorEdit(contextSnapshot, withoutShadow, {
+    layerId: targetLayer.id,
+    attributeName: "type",
+    enabled: true
+  });
+  assert.equal(
+    buildSelectorExports(withTargetType, { browser: "Chrome/140.0" }).uipath,
+    [
+      "<html app='chrome.exe' />",
+      "<webctrl tag='IFRAME' css-selector='[title=&quot;Payment&quot;]' />",
+      "<webctrl tag='INPUT' name='query' css-selector='[type=&quot;search&quot;]' />"
+    ].join("\n")
+  );
+});
+
+test("UiPath export maps text and escapes XML attribute values", () => {
+  const candidate = generateSelectorCandidates(snapshot, "primary").find(
+    (item) => item.type === "xpath"
+  );
+  assert.ok(candidate);
+  const targetLayer = candidate.layers.find((layer) => layer.kind === "target");
+  assert.ok(targetLayer);
+
+  const withText = applySelectorEdit(snapshot, candidate, {
+    layerId: targetLayer.id,
+    attributeName: "text",
+    enabled: true
+  });
+  const withEscapedText = applySelectorEdit(snapshot, withText, {
+    layerId: targetLayer.id,
+    attributeName: "text",
+    value: `Save & review <owner's "draft">`
+  });
+  assert.equal(
+    buildSelectorExports(withEscapedText).uipath,
+    "<webctrl tag='BUTTON' innertext='Save &amp; review &lt;owner&apos;s &quot;draft&quot;&gt;' css-selector='[data-testid=&quot;save-account&quot;]' />"
+  );
+});
+
+test("UiPath export preserves XML whitespace and replaces forbidden control characters", () => {
+  const candidate = generateSelectorCandidates(snapshot, "unstable").find(
+    (item) => item.type === "css"
+  );
+  assert.ok(candidate);
+  const withControlCharacters = applySelectorEdit(snapshot, candidate, {
+    layerId: "target",
+    attributeName: "name",
+    value: "Line 1\nLine 2\t\u0001 & done"
+  });
+
+  assert.equal(
+    buildSelectorExports(withControlCharacters).uipath,
+    "<webctrl tag='INPUT' name='Line 1&#xA;Line 2&#x9;� &amp; done' />"
+  );
+});
+
+test("unavailable contexts return a non-runnable UiPath XML diagnostic", () => {
+  const diagnostic = makeNode({
+    id: "uipath-unavailable",
+    nodeType: 8,
+    nodeName: "#context-unavailable",
+    tagName: undefined,
+    kind: "diagnostic",
+    diagnostic: {
+      code: "cross-origin-frame",
+      messageKey: "snapshot.crossOriginFrame",
+      detail: "Frame -- detached & unavailable\u0001"
+    }
+  });
+
+  const output = buildUnavailableContextExports(diagnostic);
+
+  assert.equal(
+    output.uipath,
+    "<!-- Selector export unavailable because the target context is inaccessible. -->\n<!-- [cross-origin-frame] Frame - - detached &amp; unavailable� -->\n"
+  );
 });

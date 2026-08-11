@@ -20,6 +20,7 @@ import type {
 } from "../../shared/tableExtraction.js";
 import type { TableSelection } from "../../shared/tableSelection.js";
 import type { MessageKey } from "../i18n/messages.js";
+import type { UiPathWebSelectorContext } from "../../shared/uipathSelector.js";
 
 const SELECTOR_LAYER_MESSAGE_KEYS = {
   page: "selector.layer.page",
@@ -132,12 +133,13 @@ export function getJavaScriptStrategyButtonPresentation(
 
 export function buildWorkbenchExports(
   selectedElement: ElementSnapshot | null,
-  selectedCandidate: SelectorCandidate | null
+  selectedCandidate: SelectorCandidate | null,
+  uipathContext: UiPathWebSelectorContext = {}
 ): SelectorExports | null {
   if (selectedElement?.diagnostic) {
     return buildUnavailableContextExports(selectedElement);
   }
-  return selectedCandidate ? buildSelectorExports(selectedCandidate) : null;
+  return selectedCandidate ? buildSelectorExports(selectedCandidate, uipathContext) : null;
 }
 
 export function getTableSummary(

@@ -1,5 +1,10 @@
 import { findElementSnapshot, flattenElementSnapshot, getElementPath } from "./domSnapshot.js";
 import type { ContextBoundary, ElementSnapshot, SnapshotDiagnostic } from "./ipc.js";
+import {
+  buildUiPathWebSelector,
+  formatUnavailableUiPathExport,
+  type UiPathWebSelectorContext
+} from "./uipathSelector.js";
 
 export type SelectorType = "css" | "xpath" | "playwright";
 export type SelectorValidationStatus = "missing" | "unique" | "multiple" | "mismatch";
@@ -79,6 +84,7 @@ export type SelectorExports = {
   json: string;
   playwright: string;
   selenium: string;
+  uipath: string;
 };
 
 type BoundarySelectorMatch = {
@@ -309,7 +315,10 @@ export function suggestSelectorRepairs(
     .map(({ score: _score, ...suggestion }) => suggestion);
 }
 
-export function buildSelectorExports(candidate: SelectorCandidate): SelectorExports {
+export function buildSelectorExports(
+  candidate: SelectorCandidate,
+  uipathContext: UiPathWebSelectorContext = {}
+): SelectorExports {
   const cssSelector = serializeContentCss(candidate.layers);
   const playwrightLocator = buildPlaywrightLocator(candidate.layers);
   const exactPlaywrightContext = hasContextLayers(candidate.layers);
@@ -357,7 +366,8 @@ export function buildSelectorExports(candidate: SelectorCandidate): SelectorExpo
     return {
       json,
       playwright: formatUnavailableExport("//", inaccessibleDiagnostics),
-      selenium: formatUnavailableExport("#", inaccessibleDiagnostics)
+      selenium: formatUnavailableExport("#", inaccessibleDiagnostics),
+      uipath: formatUnavailableUiPathExport(inaccessibleDiagnostics)
     };
   }
 
@@ -401,7 +411,8 @@ from selenium.webdriver.common.by import By
 driver = webdriver.Chrome()
 driver.get("https://example.com")
 ${seleniumStatements.join("\n")}
-`
+`,
+    uipath: buildUiPathWebSelector(candidate.layers, uipathContext)
   };
 }
 
@@ -425,7 +436,8 @@ export function buildUnavailableContextExports(node: ElementSnapshot): SelectorE
   return {
     json,
     playwright: formatUnavailableExport("//", diagnostics),
-    selenium: formatUnavailableExport("#", diagnostics)
+    selenium: formatUnavailableExport("#", diagnostics),
+    uipath: formatUnavailableUiPathExport(diagnostics)
   };
 }
 

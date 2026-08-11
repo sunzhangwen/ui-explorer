@@ -124,8 +124,9 @@ test("BrowserSession connects to the browser websocket and attaches the selected
     webSocketDebuggerUrl: "ws://page-1"
   }];
 
-  await session.connect("http://127.0.0.1:9222");
+  const info = await session.connect("http://127.0.0.1:9222");
 
+  assert.equal(info.browser, "Chrome/140.0.0.0");
   assert.deepEqual(connection.connectedUrls, [
     "ws://127.0.0.1:9222/devtools/browser/browser-id"
   ]);

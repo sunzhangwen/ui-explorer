@@ -139,6 +139,7 @@ export type MessageKey =
   | "selector.export.json"
   | "selector.export.playwright"
   | "selector.export.selenium"
+  | "selector.export.uipath"
   | "selector.copy"
   | "javascript.summary"
   | "javascript.emptySummary"
@@ -395,7 +396,7 @@ export const messages: Record<"zh-CN" | "en-US", Record<MessageKey, string>> = {
     "selector.totalScore": "综合分",
     "selector.stability": "稳定性",
     "selector.readability": "可读性",
-    "selector.layers": "层级编辑",
+    "selector.layers": "UiPath 层级编辑",
     "selector.targetLayer": "目标层",
     "selector.ancestorLayer": "祖先层",
     "selector.layer.page": "页面层",
@@ -417,6 +418,7 @@ export const messages: Record<"zh-CN" | "en-US", Record<MessageKey, string>> = {
     "selector.export.json": "JSON",
     "selector.export.playwright": "Playwright",
     "selector.export.selenium": "Selenium",
+    "selector.export.uipath": "UiPath XML",
     "selector.copy": "复制导出内容",
     "javascript.summary": "受控单次执行",
     "javascript.emptySummary": "未选择元素",
@@ -673,7 +675,7 @@ export const messages: Record<"zh-CN" | "en-US", Record<MessageKey, string>> = {
     "selector.totalScore": "Score",
     "selector.stability": "Stability",
     "selector.readability": "Readability",
-    "selector.layers": "Layer editor",
+    "selector.layers": "UiPath layer editor",
     "selector.targetLayer": "Target layer",
     "selector.ancestorLayer": "Ancestor layer",
     "selector.layer.page": "Page layer",
@@ -695,6 +697,7 @@ export const messages: Record<"zh-CN" | "en-US", Record<MessageKey, string>> = {
     "selector.export.json": "JSON",
     "selector.export.playwright": "Playwright",
     "selector.export.selenium": "Selenium",
+    "selector.export.uipath": "UiPath XML",
     "selector.copy": "Copy export",
     "javascript.summary": "Controlled one-time execution",
     "javascript.emptySummary": "No element selected",

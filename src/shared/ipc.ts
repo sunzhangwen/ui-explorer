@@ -207,6 +207,7 @@ export type ExecuteJavaScriptDiagnosticResult =
 
 export type BrowserConnectionInfo = {
   endpoint: string;
+  browser?: string;
   connected: boolean;
   status: "connected" | "no-targets" | "target-closed" | "reconnected" | "navigated";
   targetId: string | null;
